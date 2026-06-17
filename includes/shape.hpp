@@ -10,27 +10,28 @@
 class Shape{
 
     public:
-        Shape(std::initializer_list<int64_t> const &dims) : dims_(dims){}
-        Shape(std::vector<int64_t> const &dims) : dims_(dims){}
+        Shape(std::initializer_list<long> const &dims) : dims_(dims){}
+        Shape(std::vector<long> const &dims) : dims_(dims){}
 
-        int64_t numel() const{
-            int64_t temp = 1;
+        long numel() const{
+            long temp = 1;
             for(auto &dim : dims_) temp *= dim;
             return temp;
         }
 
-        Shape operator=(const Shape &shape) const{
-            return Shape(shape.dims_);
+        Shape& operator=(const Shape &shape) {
+            this->dims_ = shape.dims_;
+            return *this;
         }
 
-        const std::vector<int64_t> &dims() const{
+        const std::vector<long> &dims() const{
             return dims_;
         }
 
         friend std::ostream& operator<<(std::ostream& os, const Shape& shape);
 
     private:
-        std::vector<int64_t> dims_;
+        std::vector<long> dims_;
 };
 
 std::ostream& operator<<(std::ostream& os, const Shape& shape){

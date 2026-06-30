@@ -114,6 +114,20 @@ class Graph{
                     if(node.outputs().size() != 1) 
                         throw std::runtime_error(std::format("AddOp expect 1 outputs but generated {}", node.outputs().size()));
                     break;
+
+                case OP_TYPE::MulOp:
+                    if(node.inputs().size() != 2) 
+                        throw std::runtime_error(std::format("MulOp expect 2 inputs but received {}", node.inputs().size()));
+                    if(node.outputs().size() != 1) 
+                        throw std::runtime_error(std::format("MulOp expect 1 outputs but generated {}", node.outputs().size()));
+                    break;
+
+                case OP_TYPE::ReluOp:
+                    if(node.inputs().size() != 1) 
+                        throw std::runtime_error(std::format("ReluOp expect 1 inputs but received {}", node.inputs().size()));
+                    if(node.outputs().size() != 1) 
+                        throw std::runtime_error(std::format("ReluOp expect 1 outputs but generated {}", node.outputs().size()));
+                    break;
             
             default:
                 throw std::runtime_error(std::format("Unknown operation {}", node.op_type_str()));

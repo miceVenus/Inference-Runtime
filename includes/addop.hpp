@@ -7,7 +7,7 @@
 class AddOp{
 
     public:
-        Tensor forward(const Tensor &t1, const Tensor &t2){
+        static Tensor forward(const Tensor &t1, const Tensor &t2){
             if(t1.dtype() != t2.dtype()) throw std::runtime_error("add(t1, t2) : error in dtype");
             if(t1.shape().dims().size() != t2.shape().dims().size()) throw std::runtime_error("add(t1, t2) : error in shape");
             for(long i = 0; i < t1.shape().dims().size(); i++){

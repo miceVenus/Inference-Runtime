@@ -8,6 +8,8 @@
 
 enum class OP_TYPE{
     AddOp,
+    MulOp,
+    ReluOp,
 };
 
 class Node{
@@ -37,6 +39,10 @@ class Node{
             switch (op_type_){
                 case OP_TYPE::AddOp:
                     return "Add";
+                case OP_TYPE::MulOp:
+                    return "Mul";
+                case OP_TYPE::ReluOp:
+                    return "Relu";
                 default:
                     return "Unknown Type";
             }

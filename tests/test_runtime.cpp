@@ -6,6 +6,7 @@
 #include "node.hpp"
 #include "reluop.hpp"
 #include "tensor.hpp"
+#include "operation_fac.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -13,6 +14,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <memory>
 #include <vector>
 
 namespace {
@@ -130,6 +132,13 @@ void test_basic_ops() {
     expect_data_eq(AddOp::forward(lhs, rhs), {3, 1, 8, 2, 12, 2});
     expect_data_eq(MulOp::forward(lhs, rhs), {2, -6, 15, -24, 35, -48});
     expect_data_eq(ReluOp::forward(rhs), {1, 0, 3, 0, 5, 0});
+
+    auto op = OperationFactory::create(OP_TYPE::AddOp);
+    expect_data_eq(op->forward({&lhs, &rhs}), {3, 1, 8, 2, 12, 2});
+    op = OperationFactory::create(OP_TYPE::MulOp);
+    expect_data_eq(op->forward({&lhs, &rhs}), {2, -6, 15, -24, 35, -48});
+    op = OperationFactory::create(OP_TYPE::ReluOp);
+    expect_data_eq(op->forward({&rhs}), {1, 0, 3, 0, 5, 0});
 
     expect_throws([&] {
         AddOp::forward(lhs, Tensor(Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32));

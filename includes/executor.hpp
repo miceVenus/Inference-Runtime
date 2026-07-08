@@ -3,10 +3,8 @@
 
 #include "tensor.hpp"
 #include "graph.hpp"
-#include "addop.hpp"
-#include "mulop.hpp"
-#include "reluop.hpp"
-#include "matmulop.hpp"
+
+#include "operation_fac.hpp"
 
 #include <algorithm>
 #include <unordered_map>
@@ -39,32 +37,20 @@ class Executor{
         }
 
         void run(){
+
             for(auto &i : e_graph.inputs()){
                 if(e_map.find(i) == e_map.cend())
                     throw std::runtime_error("error in graph input check");
             }
 
             for(auto &i : e_graph.nodes()){
-                switch (i.op_type()){
-                    case OP_TYPE::AddOp:
-                        set_input(i.outputs()[0], AddOp::forward(e_map.at(i.inputs()[0]), e_map.at(i.inputs()[1])));
-                        break;
 
-                    case OP_TYPE::MulOp:
-                        set_input(i.outputs()[0], MulOp::forward(e_map.at(i.inputs()[0]), e_map.at(i.inputs()[1])));
-                        break;
+                auto op = OperationFactory::create(i.op_type());
 
-                    case OP_TYPE::ReluOp:
-                        set_input(i.outputs()[0], ReluOp::forward(e_map.at(i.inputs()[0])));
-                        break;
+                std::vector<const Tensor*> t;
+                for(auto & j : i.inputs()) t.emplace_back(&e_map.at(j));
+                set_input(i.outputs()[0], std::move(op->forward(t)));
 
-                    case OP_TYPE::MatMulOp:
-                        set_input(i.outputs()[0], MatMulOp::forward(e_map.at(i.inputs()[0]), e_map.at(i.inputs()[1])));
-                        break;
-
-                    default:
-                        throw std::runtime_error(std::format("unknown op called {}", i.op_type_str()));
-                }
             }
         }
 

@@ -1,17 +1,12 @@
 #ifndef NODE_HPP
 #define NODE_HPP
 
+#include "operation.hpp"
+
 #include <string>
 #include <iostream>
 #include <initializer_list>
 #include <vector>
-
-enum class OP_TYPE{
-    AddOp,
-    MulOp,
-    ReluOp,
-    MatMulOp,
-};
 
 class Node{
 

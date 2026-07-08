@@ -2,6 +2,7 @@
 #define GRAPH_HPP
 
 #include "node.hpp"
+#include "operation_fac.hpp"
 #include <unordered_set>
 #include <stdexcept>
 #include <format>
@@ -107,38 +108,11 @@ class Graph{
 
         void validate_node_schema(const Node &node) const{
 
-            switch (node.op_type()){
-                case OP_TYPE::AddOp:
-                    if(node.inputs().size() != 2) 
-                        throw std::runtime_error(std::format("AddOp expect 2 inputs but received {}", node.inputs().size()));
-                    if(node.outputs().size() != 1) 
-                        throw std::runtime_error(std::format("AddOp expect 1 outputs but generated {}", node.outputs().size()));
-                    break;
-
-                case OP_TYPE::MulOp:
-                    if(node.inputs().size() != 2) 
-                        throw std::runtime_error(std::format("MulOp expect 2 inputs but received {}", node.inputs().size()));
-                    if(node.outputs().size() != 1) 
-                        throw std::runtime_error(std::format("MulOp expect 1 outputs but generated {}", node.outputs().size()));
-                    break;
-
-                case OP_TYPE::ReluOp:
-                    if(node.inputs().size() != 1) 
-                        throw std::runtime_error(std::format("ReluOp expect 1 inputs but received {}", node.inputs().size()));
-                    if(node.outputs().size() != 1) 
-                        throw std::runtime_error(std::format("ReluOp expect 1 outputs but generated {}", node.outputs().size()));
-                    break;
-
-                case OP_TYPE::MatMulOp:
-                    if(node.inputs().size() != 2) 
-                        throw std::runtime_error(std::format("MatMulOp expect 2 inputs but received {}", node.inputs().size()));
-                    if(node.outputs().size() != 1) 
-                        throw std::runtime_error(std::format("MatMulOp expect 1 outputs but generated {}", node.outputs().size()));
-                    break;
-            
-            default:
-                throw std::runtime_error(std::format("Unknown operation {}", node.op_type_str()));
-            }
+            std::pair<std::size_t, std::size_t> io_pair = OperationFactory::schema(node.op_type());
+            if(node.inputs().size() != io_pair.first)
+                throw std::runtime_error(std::format("{} expect {} inputs but received {}", node.op_type_str(), io_pair.first, node.inputs().size()));
+            if(node.outputs().size() != io_pair.second)
+                throw std::runtime_error(std::format("{} expect {} outputs but generated {}", node.op_type_str(), io_pair.second, node.outputs().size()));
 
         }
 

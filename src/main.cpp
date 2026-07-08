@@ -4,12 +4,13 @@
 #include "graph.hpp"
 #include "executor.hpp"
 #include "matmulop.hpp"
+
+#include "operation.hpp"
+#include <memory>
 #include <iostream>
 
 int main(){
     Shape shape = Shape({1, 2, 3});
-    AddOp op1;
-    
 
     Tensor tensor   = Tensor(shape, {2, 3, 5, 6, 7, 8}, Dtype::Float32);
     Tensor tensor2  = Tensor(shape, {1, -2, 3, -4, 5, -6}, Dtype::Float32);
@@ -33,6 +34,7 @@ int main(){
     Node mul_0  = Node({"d", "c"}, {"e"}, "mul_0", OP_TYPE::MulOp);
     Node relu_0  = Node({"e"}, {"relu_e"}, "relu_0", OP_TYPE::ReluOp);
     Node mask_0   = Node({"relu_e", "mask"}, {"masked_relu_e"}, "mask_0", OP_TYPE::MulOp);
+
     
     try{
         Graph toy_graph = Graph({add_0, add_1, mul_0, relu_0, mask_0}, {"a", "b", "mask"}, {"masked_relu_e"}, "toy_graph");

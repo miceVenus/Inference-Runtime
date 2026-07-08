@@ -6,6 +6,7 @@
 #include "addop.hpp"
 #include "mulop.hpp"
 #include "reluop.hpp"
+#include "matmulop.hpp"
 
 #include <algorithm>
 #include <unordered_map>
@@ -18,6 +19,10 @@ class Executor{
 
         void set_input(const std::string &name, const Tensor &t){
             e_map.insert_or_assign(name, t);
+        }
+
+        void set_input(const std::string &name, Tensor &&t){
+            e_map.insert_or_assign(name, std::move(t));
         }
 
         Tensor &get_tensor(const std::string &name) {
@@ -42,18 +47,19 @@ class Executor{
             for(auto &i : e_graph.nodes()){
                 switch (i.op_type()){
                     case OP_TYPE::AddOp:
-                        AddOp add_op;
-                        set_input(i.outputs()[0], add_op.forward(e_map.at(i.inputs()[0]), e_map.at(i.inputs()[1])));
+                        set_input(i.outputs()[0], AddOp::forward(e_map.at(i.inputs()[0]), e_map.at(i.inputs()[1])));
                         break;
 
                     case OP_TYPE::MulOp:
-                        MulOp mul_op;
-                        set_input(i.outputs()[0], mul_op.forward(e_map.at(i.inputs()[0]), e_map.at(i.inputs()[1])));
+                        set_input(i.outputs()[0], MulOp::forward(e_map.at(i.inputs()[0]), e_map.at(i.inputs()[1])));
                         break;
 
                     case OP_TYPE::ReluOp:
-                        ReluOp relu_op;
-                        set_input(i.outputs()[0], relu_op.forward(e_map.at(i.inputs()[0])));
+                        set_input(i.outputs()[0], ReluOp::forward(e_map.at(i.inputs()[0])));
+                        break;
+
+                    case OP_TYPE::MatMulOp:
+                        set_input(i.outputs()[0], MatMulOp::forward(e_map.at(i.inputs()[0]), e_map.at(i.inputs()[1])));
                         break;
 
                     default:

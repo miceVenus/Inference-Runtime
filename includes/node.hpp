@@ -10,6 +10,7 @@ enum class OP_TYPE{
     AddOp,
     MulOp,
     ReluOp,
+    MatMulOp,
 };
 
 class Node{
@@ -43,6 +44,8 @@ class Node{
                     return "Mul";
                 case OP_TYPE::ReluOp:
                     return "Relu";
+                case OP_TYPE::MatMulOp:
+                    return "MatMul";
                 default:
                     return "Unknown Type";
             }

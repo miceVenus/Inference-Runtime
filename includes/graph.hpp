@@ -3,7 +3,10 @@
 
 #include "node.hpp"
 #include "operation_fac.hpp"
+
 #include <unordered_set>
+#include <unordered_map>
+#include <queue>
 #include <stdexcept>
 #include <format>
 
@@ -15,9 +18,25 @@ class Graph{
             const std::initializer_list<std::string> &inputs,
             const std::initializer_list<std::string> &outputs,
             const std::string &name) :
-            nodes_(nodes), inputs_(inputs), outputs_(outputs), name_(name){
+            inputs_(inputs), outputs_(outputs), name_(name){
 
-            validate();
+            for(auto &i : nodes){
+                if(node_name_map_id_.contains(i.name())) throw std::runtime_error(std::format("same node name {} when graph building", i.name()));
+                node_name_map_id_[i.name()] = node_name_map_id_.size();
+            }
+
+            for(auto &i : nodes){
+                for(auto &j : i.outputs()){
+                    if(value_name_map_producer_.contains(j)) throw std::runtime_error(std::format("same output name {} when graph building", j));
+                    value_name_map_producer_[j] = node_name_map_id_.at(i.name());
+                }
+
+                for(auto &j : i.inputs()){
+                    value_name_map_consumer_[j].emplace_back(node_name_map_id_.at(i.name()));
+                }
+            }
+
+            validate_set(topological_sort(nodes));
 
         }
 
@@ -62,16 +81,65 @@ class Graph{
 
 
     private:
+
         std::vector<Node> nodes_;
+
         std::vector<std::string> inputs_;
         std::vector<std::string> outputs_;
+
+        std::unordered_map<std::string, node_id> node_name_map_id_;
+        std::unordered_map<std::string, node_id> value_name_map_producer_;
+        std::unordered_map<std::string, std::vector<node_id>> value_name_map_consumer_;
         std::string name_;
 
+        std::vector<Node> topological_sort(const std::vector<Node> &nodes){
 
-        void validate() const{
+            std::vector<std::vector<node_id>> adjacency(nodes.size());
+            std::vector<std::size_t> indegree(nodes.size(), 0);
+            std::vector<node_id> executor_order;
+            std::queue<node_id> ready;
 
-            std::vector<std::string> c_in;
-            std::vector<std::string> p_out;
+            for(std::size_t i = 0; i < nodes.size(); i++){
+                for(auto & j : nodes[i].outputs()){
+                    for(const auto & k : value_name_map_consumer_[j])
+                        adjacency[i].emplace_back(k);
+                }
+                for(auto & j : nodes[i].inputs()){
+                    if(value_name_map_producer_.contains(j)) indegree[i]++;
+                }
+            }
+
+            for(std::size_t j = 0; j < indegree.size(); j++)
+                if(indegree[j] == 0) ready.push(j);
+
+            
+            while(!ready.empty()){
+
+                node_id index = ready.front();
+                executor_order.emplace_back(index);
+
+                for(auto k : adjacency[index]){
+                    if(--indegree[k] == 0) ready.push(k);
+                }
+
+                ready.pop();
+            }
+
+            if(executor_order.size() != nodes.size()) throw std::runtime_error("error in topological sort");
+
+            std::vector<Node> t_vec;
+
+            for(auto &i : executor_order){
+                t_vec.emplace_back(nodes[i]);
+            }
+
+            return t_vec;
+
+        }
+
+
+
+        void validate_set(std::vector<Node> && nodes) {
 
             std::unordered_set<std::string> available_set;
 
@@ -79,17 +147,14 @@ class Graph{
             // for(auto &i : nodes_)
             //     available_set.insert(i.outputs().cbegin(), i.outputs().cend());
 
-            for(auto &i : nodes_){
-                c_in = i.inputs();
+            for(auto &i : nodes){
 
-                for(auto &j : c_in){
+                for(auto &j : i.inputs()){
                     if(available_set.find(j) == available_set.cend()) 
                         throw std::runtime_error("input can not be deduced by prev out");
                 }
-                    
-                p_out = i.outputs();
 
-                for(auto &j : p_out){
+                for(auto &j : i.outputs()){
                     auto [it, inserted] = available_set.insert(j);
                     if(!inserted) throw std::runtime_error("duplicated output");
                 }
@@ -104,6 +169,7 @@ class Graph{
                     throw std::runtime_error("graph outputs can not be deduced");
             }
 
+            nodes_ = std::move(nodes);
         }
 
         void validate_node_schema(const Node &node) const{
@@ -115,17 +181,6 @@ class Graph{
                 throw std::runtime_error(std::format("{} expect {} outputs but generated {}", node.op_type_str(), io_pair.second, node.outputs().size()));
 
         }
-
-
-        // static bool check_param(const std::vector<std::string> & a, const std::vector<std::string> & b){
-        //     if(a.size() != b.size()) return false;
-
-        //     for(int i = 0; i < a.size(); i++){
-        //         if(a[i] != b[i]) return false;
-        //     }
-
-        //     return true;
-        // }
 };
 
 

@@ -37,7 +37,8 @@ int main(){
 
     
     try{
-        Graph toy_graph = Graph({add_0, add_1, mul_0, relu_0, mask_0}, {"a", "b", "mask"}, {"masked_relu_e"}, "toy_graph");
+
+        Graph toy_graph = Graph({add_1, add_0, mul_0, relu_0, mask_0}, {"a", "b", "mask"}, {"masked_relu_e"}, "toy_graph");
         // toy_graph.show_graph_info();
         Executor e = Executor(toy_graph);
         e.set_input("a", tensor);

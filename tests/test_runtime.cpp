@@ -92,23 +92,41 @@ void test_backend_semantics() {
     const Tensor cuda_lhs(Shape({2, 2}), {1, -2, 3, -4}, Dtype::Float32, Backend::CUDA);
     const Tensor cuda_rhs(Shape({2, 2}), {5, 6, 7, 8}, Dtype::Float32, Backend::CUDA);
 
-    const Tensor add_result = AddOp::forward(cuda_lhs, cuda_rhs);
-    assert(add_result.backend() == Backend::CUDA);
-    expect_data_eq(add_result, {6, 4, 10, 4});
+    expect_throws([&] {
+        AddOp::forward(cuda_lhs, cuda_rhs);
+    });
 
-    const Tensor mul_result = MulOp::forward(cuda_lhs, cuda_rhs);
-    assert(mul_result.backend() == Backend::CUDA);
-    expect_data_eq(mul_result, {5, -12, 21, -32});
+    expect_throws([&] {
+        MulOp::forward(cuda_lhs, cuda_rhs);
+    });
 
-    const Tensor relu_result = ReluOp::forward(cuda_lhs);
-    assert(relu_result.backend() == Backend::CUDA);
-    expect_data_eq(relu_result, {1, 0, 3, 0});
+    expect_throws([&] {
+        ReluOp::forward(cuda_lhs);
+    });
 
-    const Tensor matmul_lhs(Shape({2, 3}), {1, 2, 3, 4, 5, 6}, Dtype::Float32, Backend::CUDA);
-    const Tensor matmul_rhs(Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32, Backend::CUDA);
-    const Tensor matmul_result = MatMulOp::forward(matmul_lhs, matmul_rhs);
-    assert(matmul_result.backend() == Backend::CUDA);
-    expect_data_eq(matmul_result, {22, 28, 49, 64});
+    expect_throws([&] {
+        MatMulOp::forward(cuda_lhs, cuda_rhs);
+    });
+
+    auto add_op = OperationFactory::create(OP_TYPE::AddOp);
+    expect_throws([&] {
+        add_op->forward({&cuda_lhs, &cuda_rhs});
+    });
+
+    auto mul_op = OperationFactory::create(OP_TYPE::MulOp);
+    expect_throws([&] {
+        mul_op->forward({&cuda_lhs, &cuda_rhs});
+    });
+
+    auto relu_op = OperationFactory::create(OP_TYPE::ReluOp);
+    expect_throws([&] {
+        relu_op->forward({&cuda_lhs});
+    });
+
+    auto matmul_op = OperationFactory::create(OP_TYPE::MatMulOp);
+    expect_throws([&] {
+        matmul_op->forward({&cuda_lhs, &cuda_rhs});
+    });
 
     expect_throws([&] {
         AddOp::forward(cpu_tensor, cuda_tensor);
@@ -172,11 +190,15 @@ void test_matmul_op() {
 void test_graph_validation() {
     const Node add({"a", "b"}, {"c"}, "add_0", OP_TYPE::AddOp);
     const Node relu({"c"}, {"out"}, "relu_0", OP_TYPE::ReluOp);
-    const Graph graph({add, relu}, {"a", "b"}, {"out"}, "valid_graph");
+    const Node mul({"out", "c"}, {"result"}, "mul_0", OP_TYPE::MulOp);
+    const Graph graph({mul, relu, add}, {"a", "b"}, {"result"}, "unordered_graph");
 
-    assert(graph.nodes().size() == 2);
+    assert(graph.nodes().size() == 3);
     assert(graph.inputs().size() == 2);
     assert(graph.outputs().size() == 1);
+    assert(graph.nodes()[0].name() == "add_0");
+    assert(graph.nodes()[1].name() == "relu_0");
+    assert(graph.nodes()[2].name() == "mul_0");
 
     expect_throws([] {
         Graph missing_input(
@@ -212,6 +234,28 @@ void test_graph_validation() {
             {"c"},
             "wrong_matmul_schema");
     });
+
+    expect_throws([] {
+        Graph duplicate_node_name(
+            {
+                Node({"a", "b"}, {"c"}, "same_name", OP_TYPE::AddOp),
+                Node({"c"}, {"out"}, "same_name", OP_TYPE::ReluOp),
+            },
+            {"a", "b"},
+            {"out"},
+            "duplicate_node_name");
+    });
+
+    expect_throws([] {
+        Graph cyclic_graph(
+            {
+                Node({"b", "input"}, {"a"}, "add_0", OP_TYPE::AddOp),
+                Node({"a"}, {"b"}, "relu_0", OP_TYPE::ReluOp),
+            },
+            {"input"},
+            {"b"},
+            "cyclic_graph");
+    });
 }
 
 void test_executor_end_to_end() {
@@ -227,10 +271,10 @@ void test_executor_end_to_end() {
     const Node relu_1({"matmul_output"}, {"relu_matmul_output"}, "relu_1", OP_TYPE::ReluOp);
 
     const Graph graph(
-        {add_0, add_1, mul_0, relu_0, mask_0, matmul_0, relu_1},
+        {relu_1, mask_0, mul_0, add_1, matmul_0, relu_0, add_0},
         {"a", "b", "mask", "matmul_input", "matmul_weight"},
         {"masked_relu_e", "relu_matmul_output"},
-        "toy_graph");
+        "unordered_toy_graph");
 
     Executor executor(graph);
     executor.set_input("a", Tensor(Shape({1, 2, 3}), {2, 3, 5, 6, 7, 8}, Dtype::Float32, Backend::CPU));
@@ -259,6 +303,19 @@ void test_executor_end_to_end() {
     missing_input_executor.set_input("a", Tensor(Shape({1, 2, 3}), {2, 3, 5, 6, 7, 8}, Dtype::Float32));
     expect_throws([&] {
         missing_input_executor.run();
+    });
+
+    const Graph cuda_graph(
+        {Node({"cuda_a", "cuda_b"}, {"cuda_out"}, "cuda_add", OP_TYPE::AddOp)},
+        {"cuda_a", "cuda_b"},
+        {"cuda_out"},
+        "cuda_graph");
+
+    Executor cuda_executor(cuda_graph);
+    cuda_executor.set_input("cuda_a", Tensor(Shape({2}), {1, 2}, Dtype::Float32, Backend::CUDA));
+    cuda_executor.set_input("cuda_b", Tensor(Shape({2}), {3, 4}, Dtype::Float32, Backend::CUDA));
+    expect_throws([&] {
+        cuda_executor.run();
     });
 }
 

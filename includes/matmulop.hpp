@@ -15,6 +15,7 @@ class MatMulOp : public Operation{
             const Tensor & t2 = *inputs.at(1);
 
             if(t1.backend() != t2.backend()) throw std::runtime_error("matmul(t1, t2) : error in different device");
+            if(t1.backend() != Backend::CPU) throw std::runtime_error("matmul(t1, t2) : error in GPU device");
             if(t1.dtype() != t2.dtype()) throw std::runtime_error("matmul(t1, t2) : error in dtype");
             const Shape & shape1 = t1.shape();
             const Shape & shape2 = t2.shape();
@@ -45,6 +46,7 @@ class MatMulOp : public Operation{
 
         static Tensor forward(const Tensor & t1, const Tensor & t2){
             if(t1.backend() != t2.backend()) throw std::runtime_error("matmul(t1, t2) : error in different device");
+            if(t1.backend() != Backend::CPU) throw std::runtime_error("matmul(t1, t2) : error in GPU device");
             if(t1.dtype() != t2.dtype()) throw std::runtime_error("matmul(t1, t2) : error in dtype");
             const Shape & shape1 = t1.shape();
             const Shape & shape2 = t2.shape();

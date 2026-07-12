@@ -8,6 +8,9 @@
 #include <initializer_list>
 #include <vector>
 
+
+using node_id = std::size_t;
+
 class Node{
 
     public:
@@ -18,6 +21,8 @@ class Node{
         :output_(out), input_(in), name_(name), op_type_(op_type){
 
         }
+
+        Node() = default;
 
         const std::vector<std::string>& outputs() const{
             return output_;

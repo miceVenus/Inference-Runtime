@@ -22,7 +22,7 @@ class AddOp : public Operation{
 
             Tensor out = t1;
 
-            for(int i = 0; i < t1.data().size(); i++){
+            for(int i = 0; i < t1.numel(); i++){
                 out[i] += t2[i];
             }
 
@@ -38,7 +38,7 @@ class AddOp : public Operation{
 
             Tensor out = t1;
 
-            for(int i = 0; i < t1.data().size(); i++){
+            for(int i = 0; i < t1.numel(); i++){
                 out[i] += t2[i];
             }
 

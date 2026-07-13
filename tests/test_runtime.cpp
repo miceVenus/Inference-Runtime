@@ -7,6 +7,7 @@
 #include "reluop.hpp"
 #include "tensor.hpp"
 #include "operation_fac.hpp"
+#include "storage.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -20,12 +21,24 @@
 namespace {
 
 void expect_data_eq(const Tensor& tensor, const std::vector<Float32>& expected) {
-    assert(tensor.data().size() == expected.size());
+    assert(tensor.numel() == expected.size());
 
     for (std::size_t i = 0; i < expected.size(); ++i) {
-        assert(std::fabs(tensor.data()[i] - expected[i]) < 1e-6f);
+        assert(std::fabs(tensor[i] - expected[i]) < 1e-6f);
     }
 }
+
+void test_storage_interface() {
+    CpuStorage cpu(std::vector<Float32>{1, 2, 3});
+
+    Storage& storage = cpu;
+
+    assert(storage.backend() == Backend::CPU);
+    assert(storage.size() == 3);
+    assert(storage.size_bytes() == 3 * sizeof(Float32));
+    assert(storage.raw_data()[1] == 2);
+}
+
 
 template <typename Func>
 void expect_throws(Func func) {
@@ -40,7 +53,29 @@ void expect_throws(Func func) {
     assert(thrown);
 }
 
-void test_shape_and_tensor() {
+
+void test_cpu_storage() {
+    CpuStorage zeros(4);
+
+    assert(zeros.size() == 4);
+    assert(zeros.size_bytes() == 4 * sizeof(Float32));
+
+    zeros[0] = 3.0f;
+    assert(zeros[0] == 3.0f);
+    assert(zeros.raw_data()[0] == 3.0f);
+
+    std::vector<Float32> values{1, 2, 3};
+    const Float32* original_ptr = values.data();
+
+    CpuStorage moved(std::move(values));
+
+    assert(moved.size() == 3);
+    assert(moved.raw_data() == original_ptr);
+    assert(moved[0] == 1);
+    assert(moved[2] == 3);
+}
+
+void test_shape_and_tensor_creation() {
     const Shape shape({2, 3});
     assert(shape.numel() == 6);
     assert(shape == Shape({2, 3}));
@@ -64,83 +99,40 @@ void test_shape_and_tensor() {
     });
 }
 
-void test_backend_semantics() {
-    const Tensor cpu_tensor(Shape({2, 2}), {1, 2, 3, 4}, Dtype::Float32);
-    const Tensor cuda_tensor(Shape({2, 2}), {1, 2, 3, 4}, Dtype::Float32, Backend::CUDA);
+void test_tensor_copy_move_and_backend() {
+    Tensor tensor(Shape({2, 2}), {1, 2, 3, 4}, Dtype::Float32);
 
-    assert(cpu_tensor.backend() == Backend::CPU);
-    assert(cpu_tensor.is_cpu());
-    assert(!cpu_tensor.is_cuda());
+    assert(tensor.backend() == Backend::CPU);
+    assert(tensor.is_cpu());
+    assert(!tensor.is_cuda());
 
-    assert(cuda_tensor.backend() == Backend::CUDA);
-    assert(!cuda_tensor.is_cpu());
-    assert(cuda_tensor.is_cuda());
+    Tensor copied(tensor);
+    copied[0] = 100;
+    assert(tensor[0] == 1);
+    assert(copied[0] == 100);
+    assert(copied.backend() == Backend::CPU);
 
-    const Tensor copied(cuda_tensor);
-    assert(copied.backend() == Backend::CUDA);
-    expect_data_eq(copied, {1, 2, 3, 4});
+    Tensor assigned(Shape({1}), Dtype::Float32);
+    assigned = tensor;
+    assigned[1] = 200;
+    assert(tensor[1] == 2);
+    expect_data_eq(assigned, {1, 200, 3, 4});
+    assert(assigned.shape() == Shape({2, 2}));
+    assert(assigned.dtype() == Dtype::Float32);
 
-    Tensor assigned(Shape({2, 2}), Dtype::Float32);
-    assigned = cuda_tensor;
-    assert(assigned.backend() == Backend::CUDA);
-    expect_data_eq(assigned, {1, 2, 3, 4});
+    Tensor move_assigned(Shape({1}), Dtype::Float32);
+    move_assigned = Tensor(Shape({2, 1}), {9, 10}, Dtype::Float32);
+    assert(move_assigned.shape() == Shape({2, 1}));
+    expect_data_eq(move_assigned, {9, 10});
 
-    Tensor moved(Tensor(Shape({2, 2}), {5, 6, 7, 8}, Dtype::Float32, Backend::CUDA));
-    assert(moved.backend() == Backend::CUDA);
-    expect_data_eq(moved, {5, 6, 7, 8});
+    Tensor source(Shape({2}), {1, 2}, Dtype::Float32);
+    Float32* old_ptr = source.raw_data();
+    Tensor moved = std::move(source);
 
-    const Tensor cuda_lhs(Shape({2, 2}), {1, -2, 3, -4}, Dtype::Float32, Backend::CUDA);
-    const Tensor cuda_rhs(Shape({2, 2}), {5, 6, 7, 8}, Dtype::Float32, Backend::CUDA);
+    assert(moved.backend() == Backend::CPU);
+    expect_data_eq(moved, {1,2});
 
-    expect_throws([&] {
-        AddOp::forward(cuda_lhs, cuda_rhs);
-    });
-
-    expect_throws([&] {
-        MulOp::forward(cuda_lhs, cuda_rhs);
-    });
-
-    expect_throws([&] {
-        ReluOp::forward(cuda_lhs);
-    });
-
-    expect_throws([&] {
-        MatMulOp::forward(cuda_lhs, cuda_rhs);
-    });
-
-    auto add_op = OperationFactory::create(OP_TYPE::AddOp);
-    expect_throws([&] {
-        add_op->forward({&cuda_lhs, &cuda_rhs});
-    });
-
-    auto mul_op = OperationFactory::create(OP_TYPE::MulOp);
-    expect_throws([&] {
-        mul_op->forward({&cuda_lhs, &cuda_rhs});
-    });
-
-    auto relu_op = OperationFactory::create(OP_TYPE::ReluOp);
-    expect_throws([&] {
-        relu_op->forward({&cuda_lhs});
-    });
-
-    auto matmul_op = OperationFactory::create(OP_TYPE::MatMulOp);
-    expect_throws([&] {
-        matmul_op->forward({&cuda_lhs, &cuda_rhs});
-    });
-
-    expect_throws([&] {
-        AddOp::forward(cpu_tensor, cuda_tensor);
-    });
-
-    expect_throws([&] {
-        MulOp::forward(cpu_tensor, cuda_tensor);
-    });
-
-    expect_throws([&] {
-        MatMulOp::forward(
-            Tensor(Shape({2, 2}), {1, 2, 3, 4}, Dtype::Float32),
-            Tensor(Shape({2, 2}), {1, 2, 3, 4}, Dtype::Float32, Backend::CUDA));
-    });
+    assert(moved.raw_data() == old_ptr);
 }
 
 void test_basic_ops() {
@@ -174,6 +166,7 @@ void test_matmul_op() {
     const Tensor result = MatMulOp::forward(lhs, rhs);
     assert(result.shape() == Shape({2, 2}));
     assert(result.dtype() == Dtype::Float32);
+    assert(result.backend() == Backend::CPU);
     expect_data_eq(result, {22, 28, 49, 64});
 
     const Tensor vector_like(Shape({3}), {1, 2, 3}, Dtype::Float32);
@@ -277,11 +270,11 @@ void test_executor_end_to_end() {
         "unordered_toy_graph");
 
     Executor executor(graph);
-    executor.set_input("a", Tensor(Shape({1, 2, 3}), {2, 3, 5, 6, 7, 8}, Dtype::Float32, Backend::CPU));
-    executor.set_input("b", Tensor(Shape({1, 2, 3}), {1, -2, 3, -4, 5, -6}, Dtype::Float32, Backend::CPU));
-    executor.set_input("mask", Tensor(Shape({1, 2, 3}), {0, 1, 1, 0, 1, 0}, Dtype::Float32, Backend::CPU));
-    executor.set_input("matmul_input", Tensor(Shape({2, 3}), {1, -2, 3, 4, 0, -1}, Dtype::Float32, Backend::CPU));
-    executor.set_input("matmul_weight", Tensor(Shape({3, 2}), {2, 1, -1, 3, 4, -2}, Dtype::Float32, Backend::CPU));
+    executor.set_input("a", Tensor(Shape({1, 2, 3}), {2, 3, 5, 6, 7, 8}, Dtype::Float32));
+    executor.set_input("b", Tensor(Shape({1, 2, 3}), {1, -2, 3, -4, 5, -6}, Dtype::Float32));
+    executor.set_input("mask", Tensor(Shape({1, 2, 3}), {0, 1, 1, 0, 1, 0}, Dtype::Float32));
+    executor.set_input("matmul_input", Tensor(Shape({2, 3}), {1, -2, 3, 4, 0, -1}, Dtype::Float32));
+    executor.set_input("matmul_weight", Tensor(Shape({3, 2}), {2, 1, -1, 3, 4, -2}, Dtype::Float32));
 
     executor.run();
 
@@ -305,25 +298,15 @@ void test_executor_end_to_end() {
         missing_input_executor.run();
     });
 
-    const Graph cuda_graph(
-        {Node({"cuda_a", "cuda_b"}, {"cuda_out"}, "cuda_add", OP_TYPE::AddOp)},
-        {"cuda_a", "cuda_b"},
-        {"cuda_out"},
-        "cuda_graph");
-
-    Executor cuda_executor(cuda_graph);
-    cuda_executor.set_input("cuda_a", Tensor(Shape({2}), {1, 2}, Dtype::Float32, Backend::CUDA));
-    cuda_executor.set_input("cuda_b", Tensor(Shape({2}), {3, 4}, Dtype::Float32, Backend::CUDA));
-    expect_throws([&] {
-        cuda_executor.run();
-    });
 }
 
 } // namespace
 
 int main() {
-    test_shape_and_tensor();
-    test_backend_semantics();
+    test_shape_and_tensor_creation();
+    test_tensor_copy_move_and_backend();
+    test_cpu_storage();
+    test_storage_interface();
     test_basic_ops();
     test_matmul_op();
     test_graph_validation();

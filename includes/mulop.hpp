@@ -20,7 +20,7 @@ class MulOp : public Operation{
             if(t1.shape() != t2.shape()) throw std::runtime_error("mul(t1, t2) : error in shape");
             
             Tensor out = t1;
-            for(int i = 0; i < t1.data().size(); i++){
+            for(int i = 0; i < t1.numel(); i++){
                 out[i] *= t2[i];
             }
 
@@ -34,7 +34,7 @@ class MulOp : public Operation{
             if(t1.shape() != t2.shape()) throw std::runtime_error("mul(t1, t2) : error in shape");
             
             Tensor out = t1;
-            for(int i = 0; i < t1.data().size(); i++){
+            for(int i = 0; i < t1.numel(); i++){
                 out[i] *= t2[i];
             }
 

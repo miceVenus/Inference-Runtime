@@ -30,7 +30,7 @@ class MatMulOp : public Operation{
             long row_2 = shape2.dims().front();
             long col_2 = shape2.dims().back();
 
-            Tensor out = Tensor(Shape({row_1, col_2}), std::vector<Float32>(row_1 * col_2, 0), t1.dtype(), t1.backend());
+            Tensor out = Tensor(Shape({row_1, col_2}), std::vector<Float32>(row_1 * col_2, 0), t1.dtype());
             for(long k = 0; k < row_1; k++){
                 for(long l = 0; l < col_2; l++){
 
@@ -61,7 +61,7 @@ class MatMulOp : public Operation{
             long row_2 = shape2.dims().front();
             long col_2 = shape2.dims().back();
 
-            Tensor out = Tensor(Shape({row_1, col_2}), std::vector<Float32>(row_1 * col_2, 0), t1.dtype(), t1.backend());
+            Tensor out = Tensor(Shape({row_1, col_2}), std::vector<Float32>(row_1 * col_2, 0), t1.dtype());
             for(long k = 0; k < row_1; k++){
                 for(long l = 0; l < col_2; l++){
 

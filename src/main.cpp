@@ -1,57 +1,47 @@
-#include "tensor.hpp"
-#include "addop.hpp"
-#include "node.hpp"
-#include "graph.hpp"
 #include "executor.hpp"
-#include "matmulop.hpp"
-
+#include "graph.hpp"
+#include "graph_builder.hpp"
+#include "node.hpp"
 #include "operation.hpp"
-#include <memory>
+#include "tensor.hpp"
+
+#include <exception>
 #include <iostream>
+#include <unordered_map>
+#include <vector>
 
-int main(){
-    Shape shape = Shape({1, 2, 3});
+int main() {
+    try {
+        const Node matmul({"x", "weight"}, {"linear"}, "matmul_0", OP_TYPE::MatMulOp);
+        const Node add_bias({"linear", "bias"}, {"biased"}, "add_bias", OP_TYPE::AddOp);
+        const Node relu({"biased"}, {"activated"}, "relu_0", OP_TYPE::ReluOp);
+        const Node gated({"activated", "gate"}, {"gated"}, "mul_gate", OP_TYPE::MulOp);
+        const Node residual({"gated", "residual"}, {"residual_sum"}, "add_residual", OP_TYPE::AddOp);
+        const Node mask({"residual_sum", "mask"}, {"output"}, "mul_mask", OP_TYPE::MulOp);
 
-    Tensor tensor   = Tensor(shape, {2, 3, 5, 6, 7, 8}, Dtype::Float32);
-    Tensor tensor2  = Tensor(shape, {1, -2, 3, -4, 5, -6}, Dtype::Float32);
-    Tensor tensor3  = Tensor(shape, {0, 1, 1, 0 ,1, 0}, Dtype::Float32);
+        Graph graph = GraphBuilder().build(
+            "demo_graph",
+            {mask, relu, residual, matmul, gated, add_bias},
+            {"x", "gate", "residual"},
+            {"output"},
+            {
+                {"weight", Tensor(Shape({3, 2}), {1, -1, 2, 0, -1, 3}, Dtype::Float32)},
+                {"bias", Tensor(Shape({2, 2}), {1, -2, 0, 4}, Dtype::Float32)},
+                {"mask", Tensor(Shape({2, 2}), {1, 0, 1, 1}, Dtype::Float32)},
+            });
 
-    Shape m_shape1 = Shape({2, 3});
-    Shape m_shape2 = Shape({3, 2});
+        Executor executor(graph);
+        executor.set_input(graph.value_id("x"), Tensor(Shape({2, 3}), {1, 2, 3, -1, 0, 2}, Dtype::Float32));
+        executor.set_input(graph.value_id("gate"), Tensor(Shape({2, 2}), {2, 0.5, 4, -1}, Dtype::Float32));
+        executor.set_input(graph.value_id("residual"), Tensor(Shape({2, 2}), {-1, 1, 2, 20}, Dtype::Float32));
 
-    Tensor m_tensor2  = Tensor(m_shape1, {1, 2, 3, 4, 5, 6}, Dtype::Float32);
-    Tensor m_tensor3  = Tensor(m_shape2, {1, 2, 3, 4 ,5, 6}, Dtype::Float32);
+        executor.run();
 
+        std::cout << "Demo graph output:" << std::endl;
+        print(executor.get_output("output"));
 
-
-    // std::cout << tensor.shape() << std::endl;
-    // print(tensor2);
-    // std::cout << dtype2str(tensor.dtype())  << std::endl;
-    // print(op1.forward(tensor, tensor2));
-
-    Node add_0  = Node({"a", "b"}, {"c"}, "add_0", OP_TYPE::AddOp);
-    Node add_1  = Node({"c", "a"}, {"d"}, "add_1", OP_TYPE::AddOp);
-    Node mul_0  = Node({"d", "c"}, {"e"}, "mul_0", OP_TYPE::MulOp);
-    Node relu_0  = Node({"e"}, {"relu_e"}, "relu_0", OP_TYPE::ReluOp);
-    Node mask_0   = Node({"relu_e", "mask"}, {"masked_relu_e"}, "mask_0", OP_TYPE::MulOp);
-
-    
-    try{
-
-        Graph toy_graph = Graph({add_1, add_0, mul_0, relu_0, mask_0}, {"a", "b", "mask"}, {"masked_relu_e"}, "toy_graph");
-        // toy_graph.show_graph_info();
-        Executor e = Executor(toy_graph);
-        e.set_input("a", tensor);
-        e.set_input("b", tensor2);
-        e.set_input("mask", tensor3);
-        e.run();
-        
-        print(e.get_output("masked_relu_e"));
-
-        print(MatMulOp::forward(m_tensor2, m_tensor3));
-        
-    }   
-    catch (const std::exception& e) {
+        return 0;
+    } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << '\n';
         return 1;
     }

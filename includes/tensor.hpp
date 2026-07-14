@@ -12,6 +12,7 @@
 
 class Tensor{
     public:
+
         Tensor(const Shape & shape, Dtype dtype, Backend backend = Backend::CPU) 
         : shape_(shape), storage_(StorageFac::create(shape.numel(), backend)), dtype_(dtype){}
         
@@ -29,6 +30,7 @@ class Tensor{
         Tensor(Tensor && other) noexcept = default;
 
         ~Tensor() = default;
+        Tensor() = default;
 
         Tensor& operator=(Tensor && other) noexcept = default;
 

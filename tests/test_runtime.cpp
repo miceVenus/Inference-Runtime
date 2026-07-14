@@ -1,6 +1,7 @@
 #include "addop.hpp"
 #include "executor.hpp"
 #include "graph.hpp"
+#include "graph_builder.hpp"
 #include "matmulop.hpp"
 #include "mulop.hpp"
 #include "node.hpp"
@@ -8,6 +9,7 @@
 #include "tensor.hpp"
 #include "operation_fac.hpp"
 #include "storage.hpp"
+#include "value.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -15,6 +17,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <memory>
 #include <vector>
 
@@ -135,6 +138,18 @@ void test_tensor_copy_move_and_backend() {
     assert(moved.raw_data() == old_ptr);
 }
 
+void test_value_initializer_semantics() {
+    Value intermediate(0, "hidden");
+    assert(!intermediate.is_initializer());
+
+    Value weight(1, "weight");
+    weight.set_initializer(Tensor(Shape({2}), {1, 2}, Dtype::Float32));
+    assert(weight.is_initializer());
+    assert(weight.name() == "weight");
+    assert(weight.initializer().has_value());
+    expect_data_eq(weight.initializer().value(), {1, 2});
+}
+
 void test_basic_ops() {
     const Tensor lhs(Shape({2, 3}), {2, 3, 5, 6, 7, 8}, Dtype::Float32);
     const Tensor rhs(Shape({2, 3}), {1, -2, 3, -4, 5, -6}, Dtype::Float32);
@@ -184,120 +199,139 @@ void test_graph_validation() {
     const Node add({"a", "b"}, {"c"}, "add_0", OP_TYPE::AddOp);
     const Node relu({"c"}, {"out"}, "relu_0", OP_TYPE::ReluOp);
     const Node mul({"out", "c"}, {"result"}, "mul_0", OP_TYPE::MulOp);
-    const Graph graph({mul, relu, add}, {"a", "b"}, {"result"}, "unordered_graph");
+    const Graph graph = GraphBuilder().build(
+        "unordered_graph",
+        {mul, relu, add},
+        {"a", "b"},
+        {"result"},
+        {});
+    const auto& executor_order = graph.executor_order();
 
-    assert(graph.nodes().size() == 3);
+    assert(executor_order.size() == 3);
     assert(graph.inputs().size() == 2);
     assert(graph.outputs().size() == 1);
-    assert(graph.nodes()[0].name() == "add_0");
-    assert(graph.nodes()[1].name() == "relu_0");
-    assert(graph.nodes()[2].name() == "mul_0");
+    assert(graph.node(executor_order[0]).name() == "add_0");
+    assert(graph.node(executor_order[1]).name() == "relu_0");
+    assert(graph.node(executor_order[2]).name() == "mul_0");
 
     expect_throws([] {
-        Graph missing_input(
+        GraphBuilder().build(
+            "missing_input",
             {Node({"a", "missing"}, {"c"}, "bad_add", OP_TYPE::AddOp)},
             {"a"},
             {"c"},
-            "missing_input");
+            {});
     });
 
     expect_throws([] {
-        Graph duplicate_output(
+        GraphBuilder().build(
+            "duplicate_output",
             {
                 Node({"a", "b"}, {"c"}, "add_0", OP_TYPE::AddOp),
                 Node({"a", "b"}, {"c"}, "add_1", OP_TYPE::AddOp),
             },
             {"a", "b"},
             {"c"},
-            "duplicate_output");
+            {});
     });
 
     expect_throws([] {
-        Graph wrong_schema(
+        GraphBuilder().build(
+            "wrong_schema",
             {Node({"a"}, {"c"}, "bad_add", OP_TYPE::AddOp)},
             {"a"},
             {"c"},
-            "wrong_schema");
+            {});
     });
 
     expect_throws([] {
-        Graph wrong_matmul_schema(
+        GraphBuilder().build(
+            "wrong_matmul_schema",
             {Node({"a"}, {"c"}, "bad_matmul", OP_TYPE::MatMulOp)},
             {"a"},
             {"c"},
-            "wrong_matmul_schema");
+            {});
     });
 
     expect_throws([] {
-        Graph duplicate_node_name(
+        GraphBuilder().build(
+            "duplicate_node_name",
             {
                 Node({"a", "b"}, {"c"}, "same_name", OP_TYPE::AddOp),
                 Node({"c"}, {"out"}, "same_name", OP_TYPE::ReluOp),
             },
             {"a", "b"},
             {"out"},
-            "duplicate_node_name");
+            {});
     });
 
     expect_throws([] {
-        Graph cyclic_graph(
+        GraphBuilder().build(
+            "cyclic_graph",
             {
                 Node({"b", "input"}, {"a"}, "add_0", OP_TYPE::AddOp),
                 Node({"a"}, {"b"}, "relu_0", OP_TYPE::ReluOp),
             },
             {"input"},
             {"b"},
-            "cyclic_graph");
+            {});
     });
 }
 
-void test_executor_end_to_end() {
+void test_complex_graph_execution() {
+    const Node matmul({"x", "weight"}, {"linear"}, "matmul_0", OP_TYPE::MatMulOp);
+    const Node add_bias({"linear", "bias"}, {"biased"}, "add_bias", OP_TYPE::AddOp);
+    const Node relu({"biased"}, {"activated"}, "relu_0", OP_TYPE::ReluOp);
+    const Node gated({"activated", "gate"}, {"gated"}, "mul_gate", OP_TYPE::MulOp);
+    const Node residual({"gated", "residual"}, {"residual_sum"}, "add_residual", OP_TYPE::AddOp);
+    const Node mask({"residual_sum", "mask"}, {"output"}, "mul_mask", OP_TYPE::MulOp);
 
-    std::clock_t start = std::clock();
+    const Graph graph = GraphBuilder().build(
+        "complex_initializer_graph",
+        {mask, relu, residual, matmul, gated, add_bias},
+        {"x", "gate", "residual"},
+        {"output"},
+        {
+            {"weight", Tensor(Shape({3, 2}), {1, -1, 2, 0, -1, 3}, Dtype::Float32)},
+            {"bias", Tensor(Shape({2, 2}), {1, -2, 0, 4}, Dtype::Float32)},
+            {"mask", Tensor(Shape({2, 2}), {1, 0, 1, 1}, Dtype::Float32)},
+        });
 
-    const Node add_0({"a", "b"}, {"c"}, "add_0", OP_TYPE::AddOp);
-    const Node add_1({"c", "a"}, {"d"}, "add_1", OP_TYPE::AddOp);
-    const Node mul_0({"d", "c"}, {"e"}, "mul_0", OP_TYPE::MulOp);
-    const Node relu_0({"e"}, {"relu_e"}, "relu_0", OP_TYPE::ReluOp);
-    const Node mask_0({"relu_e", "mask"}, {"masked_relu_e"}, "mask_0", OP_TYPE::MulOp);
-    const Node matmul_0({"matmul_input", "matmul_weight"}, {"matmul_output"}, "matmul_0", OP_TYPE::MatMulOp);
-    const Node relu_1({"matmul_output"}, {"relu_matmul_output"}, "relu_1", OP_TYPE::ReluOp);
+    const auto& order = graph.executor_order();
+    assert(order.size() == 6);
+    assert(graph.node(order[0]).name() == "matmul_0");
+    assert(graph.node(order[1]).name() == "add_bias");
+    assert(graph.node(order[2]).name() == "relu_0");
+    assert(graph.node(order[3]).name() == "mul_gate");
+    assert(graph.node(order[4]).name() == "add_residual");
+    assert(graph.node(order[5]).name() == "mul_mask");
 
-    const Graph graph(
-        {relu_1, mask_0, mul_0, add_1, matmul_0, relu_0, add_0},
-        {"a", "b", "mask", "matmul_input", "matmul_weight"},
-        {"masked_relu_e", "relu_matmul_output"},
-        "unordered_toy_graph");
+    assert(graph.value(graph.value_id("weight")).is_initializer());
+    assert(graph.value(graph.value_id("bias")).is_initializer());
+    assert(graph.value(graph.value_id("mask")).is_initializer());
+    assert(!graph.value(graph.value_id("x")).is_initializer());
 
     Executor executor(graph);
-    executor.set_input("a", Tensor(Shape({1, 2, 3}), {2, 3, 5, 6, 7, 8}, Dtype::Float32));
-    executor.set_input("b", Tensor(Shape({1, 2, 3}), {1, -2, 3, -4, 5, -6}, Dtype::Float32));
-    executor.set_input("mask", Tensor(Shape({1, 2, 3}), {0, 1, 1, 0, 1, 0}, Dtype::Float32));
-    executor.set_input("matmul_input", Tensor(Shape({2, 3}), {1, -2, 3, 4, 0, -1}, Dtype::Float32));
-    executor.set_input("matmul_weight", Tensor(Shape({3, 2}), {2, 1, -1, 3, 4, -2}, Dtype::Float32));
-
+    executor.set_input(graph.value_id("x"), Tensor(Shape({2, 3}), {1, 2, 3, -1, 0, 2}, Dtype::Float32));
+    executor.set_input(graph.value_id("gate"), Tensor(Shape({2, 2}), {2, 0.5, 4, -1}, Dtype::Float32));
+    executor.set_input(graph.value_id("residual"), Tensor(Shape({2, 2}), {-1, 1, 2, 20}, Dtype::Float32));
     executor.run();
 
-    assert(executor.get_output("masked_relu_e").backend() == Backend::CPU);
-    assert(executor.get_output("relu_matmul_output").backend() == Backend::CPU);
-    expect_data_eq(executor.get_output("masked_relu_e"), {0, 4, 104, 0, 228, 0});
-    expect_data_eq(executor.get_output("relu_matmul_output"), {16, 0, 4, 6});
-
-    std::clock_t end = std::clock();
-
-    std::cout << "times: " << end - start << std::endl; 
-
+    const Tensor& output = executor.get_output("output");
+    assert(output.shape() == Shape({2, 2}));
+    assert(output.backend() == Backend::CPU);
+    expect_data_eq(output, {5, 0, 2, 9});
 
     expect_throws([&] {
-        executor.get_output("not_an_output");
+        executor.get_output("biased");
     });
 
     Executor missing_input_executor(graph);
-    missing_input_executor.set_input("a", Tensor(Shape({1, 2, 3}), {2, 3, 5, 6, 7, 8}, Dtype::Float32));
+    missing_input_executor.set_input(graph.value_id("x"), Tensor(Shape({2, 3}), {1, 2, 3, -1, 0, 2}, Dtype::Float32));
+    missing_input_executor.set_input(graph.value_id("gate"), Tensor(Shape({2, 2}), {2, 0.5, 4, -1}, Dtype::Float32));
     expect_throws([&] {
         missing_input_executor.run();
     });
-
 }
 
 } // namespace
@@ -305,12 +339,13 @@ void test_executor_end_to_end() {
 int main() {
     test_shape_and_tensor_creation();
     test_tensor_copy_move_and_backend();
+    test_value_initializer_semantics();
     test_cpu_storage();
     test_storage_interface();
     test_basic_ops();
     test_matmul_op();
     test_graph_validation();
-    test_executor_end_to_end();
+    test_complex_graph_execution();
 
     std::cout << "All runtime tests passed." << std::endl;
     return 0;

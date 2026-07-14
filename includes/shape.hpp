@@ -20,6 +20,7 @@ class Shape{
         : dims_(std::move(shape.dims_)){}
 
         ~Shape() = default;
+        Shape() = default;
 
 
         long numel() const{

@@ -12,51 +12,57 @@
 class Executor{
 
     public:
-        Executor(const Graph & graph) : e_graph(graph){
+        Executor(const Graph & graph) 
+        : e_graph(graph){}
+
+        void set_input(const ValueId v_id, Tensor &&t){
+            e_map[v_id] = std::move(t);
         }
 
-        void set_input(const std::string &name, const Tensor &t){
-            e_map.insert_or_assign(name, t);
+        const Tensor &get_tensor(ValueId v_id){
+            const auto & it = e_map.find(v_id);
+
+            if(it == e_map.cend()){
+                if(!e_graph.value(v_id).initializer().has_value())
+                    throw std::runtime_error("value is unavailable");
+
+                return e_graph.value(v_id).initializer().value();
+            }
+            return it->second;
         }
 
-        void set_input(const std::string &name, Tensor &&t){
-            e_map.insert_or_assign(name, std::move(t));
-        }
-
-        Tensor &get_tensor(const std::string &name) {
-            return e_map.at(name);
-        }
-
-        Tensor &get_output(const std::string &name){
-            auto & o = e_graph.outputs();
-            if(std::find(o.cbegin(), o.cend(), name) == o.cend()){
+        const Tensor &get_output(const std::string &name){
+            ValueId v_id = e_graph.value_id(name);
+            const auto & o = e_graph.outputs();
+            if(std::find(o.cbegin(), o.cend(), v_id) == o.cend()){
                 throw std::runtime_error(std::format("no varible named {} in executor", name));
             }
 
-            return get_tensor(name);
+            return get_tensor(v_id);
         }
 
         void run(){
 
-            for(auto &i : e_graph.inputs()){
-                if(e_map.find(i) == e_map.cend())
-                    throw std::runtime_error("error in graph input check");
+            for(auto i : e_graph.inputs()){
+                if(!e_map.contains(i) && !e_graph.value(i).is_initializer()) throw std::runtime_error("error in graph input check");
             }
 
-            for(auto &i : e_graph.nodes()){
+            for(auto i : e_graph.executor_order()){
 
-                auto op = OperationFactory::create(i.op_type());
+                auto op = OperationFactory::create(e_graph.node(i).op_type());
 
                 std::vector<const Tensor*> t;
-                for(auto & j : i.inputs()) t.emplace_back(&e_map.at(j));
-                set_input(i.outputs()[0], std::move(op->forward(t)));
-
+                for(auto j : e_graph.node(i).inputs()) 
+                    t.emplace_back(&get_tensor(j));
+                
+                // no multi outputs for now
+                set_input(e_graph.node(i).outputs()[0], std::move(op->forward(t)));
             }
         }
 
     private:
-        std::unordered_map<std::string, Tensor> e_map;
-        Graph e_graph;
+        std::unordered_map<ValueId, Tensor> e_map;
+        const Graph &e_graph;
 };
 
 

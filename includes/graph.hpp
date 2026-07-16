@@ -30,6 +30,7 @@ class Graph{
 
             topological_sort();
             validate();
+            desc_deduce();
         }
 
         ValueId value_id(const std::string& name) const {
@@ -61,6 +62,10 @@ class Graph{
 
         const std::vector<NodeId>& executor_order() const{
             return executor_order_;
+        }
+
+        const std::vector<NodeId>& initializers() const{
+            return initializers_;
         }
 
     private:
@@ -144,6 +149,45 @@ class Graph{
                     throw std::runtime_error("graph outputs can not be deduced");
             }
 
+        }
+
+        void desc_deduce(){
+
+            for(auto i : inputs_){
+                if(!value(i).desc().has_value()){
+                    throw std::runtime_error("graph input need tensor describation for static deduce");
+                }
+            }
+
+            for(auto i : initializers_){
+                value(i).set_desc(TensorDesc(value(i).initializer().value()));
+            }
+
+
+            for(auto i : executor_order_){
+
+                auto op = OperationFactory::create(node(i).op_type());
+
+                std::vector<TensorDesc> t;
+                for(auto j : node(i).inputs()){
+                    if(!value(j).desc().has_value()){
+                      throw std::runtime_error("static shape deduce fail because lack of input desc");  
+                    }
+                    t.push_back(value(j).desc().value());
+                }
+
+
+                // To Be Care I assumed that Op`s result must be size(1);
+                for(auto j : node(i).outputs()){
+                    value(j).set_desc(std::move(op->forward_T(t)));
+                }
+            }
+
+            for(const auto & i : values_){
+                if(!i.desc().has_value()){
+                    throw std::runtime_error(std::format("value : {} has no desc after deduce", i.name()));  
+                }
+            }
         }
 };
 

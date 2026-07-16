@@ -66,13 +66,8 @@ class Shape{
         std::vector<long> dims_;
 };
 
-std::ostream& operator<<(std::ostream& os, const Shape& shape){
 
-    os << "[";
-    for(auto &dim : shape.dims_) os << dim << ", ";
-    os << "]";
-    return os;
-}
+std::ostream& operator<<(std::ostream& os, const Shape& shape);
 
 
 #endif

@@ -14,7 +14,10 @@ enum class OP_TYPE{
 class Operation{
     public:
         virtual ~Operation() = default;
-        virtual Tensor forward(const std::vector<const Tensor*> &inputs) const = 0;
+
+        virtual TensorDesc forward_T(const std::vector<const Tensor*> &inputs) const = 0;
+        virtual TensorDesc forward_T(const std::vector<TensorDesc> &inputs) const = 0;
+        virtual Tensor& forward(const std::vector<const Tensor*> &inputs, Tensor & output) const = 0;
 };
 
 

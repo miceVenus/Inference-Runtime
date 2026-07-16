@@ -9,6 +9,7 @@
 #include "tensor.hpp"
 #include "operation_fac.hpp"
 #include "storage.hpp"
+#include "storage_pool.hpp"
 #include "value.hpp"
 
 #include <cassert>
@@ -76,6 +77,29 @@ void test_cpu_storage() {
     assert(moved.raw_data() == original_ptr);
     assert(moved[0] == 1);
     assert(moved[2] == 3);
+}
+
+void test_storage_pool_reuses_same_storage() {
+    StoragePool pool;
+    const TensorDesc tensor_spec(Shape({2, 2}), Backend::CPU, Dtype::Float32);
+
+    Tensor intermediate(tensor_spec);
+    intermediate.fill(42);
+    Float32* intermediate_data = intermediate.raw_data();
+
+    pool.put(intermediate);
+
+    Tensor reused_output(tensor_spec, pool.get(tensor_spec));
+    assert(reused_output.raw_data() == intermediate_data);
+    assert(reused_output.shape() == Shape({2, 2}));
+    assert(reused_output.backend() == Backend::CPU);
+    assert(reused_output.dtype() == Dtype::Float32);
+
+    reused_output.fill(0);
+    expect_data_eq(reused_output, {0, 0, 0, 0});
+
+    Tensor different_size_output(TensorDesc(Shape({2, 3}), Backend::CPU, Dtype::Float32), pool.get(TensorDesc(Shape({2, 3}), Backend::CPU, Dtype::Float32)));
+    assert(different_size_output.raw_data() != intermediate_data);
 }
 
 void test_shape_and_tensor_creation() {
@@ -154,23 +178,44 @@ void test_basic_ops() {
     const Tensor lhs(Shape({2, 3}), {2, 3, 5, 6, 7, 8}, Dtype::Float32);
     const Tensor rhs(Shape({2, 3}), {1, -2, 3, -4, 5, -6}, Dtype::Float32);
 
-    expect_data_eq(AddOp::forward(lhs, rhs), {3, 1, 8, 2, 12, 2});
-    expect_data_eq(MulOp::forward(lhs, rhs), {2, -6, 15, -24, 35, -48});
-    expect_data_eq(ReluOp::forward(rhs), {1, 0, 3, 0, 5, 0});
-
     auto op = OperationFactory::create(OP_TYPE::AddOp);
-    expect_data_eq(op->forward({&lhs, &rhs}), {3, 1, 8, 2, 12, 2});
+    TensorDesc add_meta = op->forward_T({&lhs, &rhs});
+    assert(add_meta.shape_ == lhs.shape());
+    assert(add_meta.dtype_ == Dtype::Float32);
+    assert(add_meta.backend_ == Backend::CPU);
+    Tensor add_out(add_meta);
+    Tensor& add_ref = op->forward({&lhs, &rhs}, add_out);
+    assert(&add_ref == &add_out);
+    expect_data_eq(add_out, {3, 1, 8, 2, 12, 2});
+
     op = OperationFactory::create(OP_TYPE::MulOp);
-    expect_data_eq(op->forward({&lhs, &rhs}), {2, -6, 15, -24, 35, -48});
+    TensorDesc mul_meta = op->forward_T({&lhs, &rhs});
+    assert(mul_meta.shape_ == lhs.shape());
+    assert(mul_meta.dtype_ == Dtype::Float32);
+    assert(mul_meta.backend_ == Backend::CPU);
+    Tensor mul_out(mul_meta);
+    Tensor& mul_ref = op->forward({&lhs, &rhs}, mul_out);
+    assert(&mul_ref == &mul_out);
+    expect_data_eq(mul_out, {2, -6, 15, -24, 35, -48});
+
     op = OperationFactory::create(OP_TYPE::ReluOp);
-    expect_data_eq(op->forward({&rhs}), {1, 0, 3, 0, 5, 0});
+    TensorDesc relu_meta = op->forward_T({&rhs});
+    assert(relu_meta.shape_ == rhs.shape());
+    assert(relu_meta.dtype_ == Dtype::Float32);
+    assert(relu_meta.backend_ == Backend::CPU);
+    Tensor relu_out(relu_meta);
+    Tensor& relu_ref = op->forward({&rhs}, relu_out);
+    assert(&relu_ref == &relu_out);
+    expect_data_eq(relu_out, {1, 0, 3, 0, 5, 0});
 
     expect_throws([&] {
-        AddOp::forward(lhs, Tensor(Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32));
+        auto bad_rhs = Tensor(Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
+        OperationFactory::create(OP_TYPE::AddOp)->forward_T({&lhs, &bad_rhs});
     });
 
     expect_throws([&] {
-        MulOp::forward(lhs, Tensor(Shape({1, 6}), {1, 2, 3, 4, 5, 6}, Dtype::Float32));
+        auto bad_rhs = Tensor(Shape({1, 6}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
+        OperationFactory::create(OP_TYPE::MulOp)->forward_T({&lhs, &bad_rhs});
     });
 }
 
@@ -178,20 +223,25 @@ void test_matmul_op() {
     const Tensor lhs(Shape({2, 3}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
     const Tensor rhs(Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
 
-    const Tensor result = MatMulOp::forward(lhs, rhs);
-    assert(result.shape() == Shape({2, 2}));
-    assert(result.dtype() == Dtype::Float32);
-    assert(result.backend() == Backend::CPU);
+    auto op = OperationFactory::create(OP_TYPE::MatMulOp);
+    TensorDesc result_meta = op->forward_T({&lhs, &rhs});
+    assert(result_meta.shape_ == Shape({2, 2}));
+    assert(result_meta.dtype_ == Dtype::Float32);
+    assert(result_meta.backend_ == Backend::CPU);
+
+    Tensor result(result_meta);
+    Tensor& result_ref = op->forward({&lhs, &rhs}, result);
+    assert(&result_ref == &result);
     expect_data_eq(result, {22, 28, 49, 64});
 
     const Tensor vector_like(Shape({3}), {1, 2, 3}, Dtype::Float32);
     expect_throws([&] {
-        MatMulOp::forward(vector_like, rhs);
+        op->forward_T({&vector_like, &rhs});
     });
 
     const Tensor incompatible_rhs(Shape({2, 2}), {1, 2, 3, 4}, Dtype::Float32);
     expect_throws([&] {
-        MatMulOp::forward(lhs, incompatible_rhs);
+        op->forward_T({&lhs, &incompatible_rhs});
     });
 }
 
@@ -310,6 +360,14 @@ void test_complex_graph_execution() {
     assert(graph.value(graph.value_id("bias")).is_initializer());
     assert(graph.value(graph.value_id("mask")).is_initializer());
     assert(!graph.value(graph.value_id("x")).is_initializer());
+    assert(graph.initializers().size() == 3);
+
+    Executor invalid_input_executor(graph);
+    expect_throws([&] {
+        invalid_input_executor.set_input(
+            graph.value_id("weight"),
+            Tensor(Shape({3, 2}), {0, 0, 0, 0, 0, 0}, Dtype::Float32));
+    });
 
     Executor executor(graph);
     executor.set_input(graph.value_id("x"), Tensor(Shape({2, 3}), {1, 2, 3, -1, 0, 2}, Dtype::Float32));
@@ -321,9 +379,13 @@ void test_complex_graph_execution() {
     assert(output.shape() == Shape({2, 2}));
     assert(output.backend() == Backend::CPU);
     expect_data_eq(output, {5, 0, 2, 9});
+    expect_data_eq(executor.get_tensor(graph.value_id("weight")), {1, -1, 2, 0, -1, 3});
 
     expect_throws([&] {
         executor.get_output("biased");
+    });
+    expect_throws([&] {
+        executor.get_tensor(graph.value_id("biased"));
     });
 
     Executor missing_input_executor(graph);
@@ -342,6 +404,7 @@ int main() {
     test_value_initializer_semantics();
     test_cpu_storage();
     test_storage_interface();
+    test_storage_pool_reuses_same_storage();
     test_basic_ops();
     test_matmul_op();
     test_graph_validation();

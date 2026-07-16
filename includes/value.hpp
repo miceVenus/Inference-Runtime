@@ -15,8 +15,8 @@
 class Value{
 
     public:
-        Value(ValueId id, std::string name)
-        :id_(id), name_(std::move(name)){}
+        Value(ValueId id, std::string name, std::optional<TensorDesc> desc = std::nullopt)
+        :id_(id), name_(std::move(name)), desc_(desc){}
 
         const std::string& name() const{
             return name_;
@@ -61,6 +61,17 @@ class Value{
             return initializer_;
         }
 
+        const std::optional<TensorDesc>& desc() const {
+            return desc_;
+        }
+
+        void set_desc(TensorDesc t_desc) {
+            if(desc_.has_value())
+                throw std::runtime_error("try to re set desc in a value");
+
+            desc_ = std::move(t_desc);
+        }
+
         
     private:
 
@@ -69,6 +80,8 @@ class Value{
 
         std::optional<NodeId> producer_;
         std::vector<NodeId> consumer_;
+
+        std::optional<TensorDesc> desc_;
 
         std::optional<Tensor> initializer_;
 };

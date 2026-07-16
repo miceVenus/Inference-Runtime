@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <utility>
 #include <memory>
+#include <algorithm>
 
 
 
@@ -22,6 +23,8 @@ class Storage{
         virtual const Float32 * raw_data() const = 0;
 
         virtual std::unique_ptr<Storage> clone() const = 0;
+
+        virtual void fill(Float32 value) = 0;
 };
 
 class CpuStorage final : public Storage{
@@ -76,6 +79,10 @@ class CpuStorage final : public Storage{
 
         std::unique_ptr<Storage> clone() const override{
             return std::make_unique<CpuStorage>(*this);
+        }
+
+        void fill(Float32 value) override{
+            std::fill(data_.begin(), data_.end(), value);
         }
 
     private:

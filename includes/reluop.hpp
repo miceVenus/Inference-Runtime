@@ -9,27 +9,23 @@ class ReluOp : public Operation{
 
     public:
 
-        Tensor forward(const std::vector<const Tensor*> &inputs) const override{
+        Tensor& forward(const std::vector<const Tensor*> &inputs, Tensor & output) const override{
 
-            if(inputs.at(0)->backend() != Backend::CPU) throw std::runtime_error("relu(t1) : error in GPU device");
-            Tensor out = *inputs.at(0);
+            const Tensor & t = *inputs.at(0);
 
-            for(int i = 0; i < out.numel(); i++){
-                out[i] = std::max(0.f, out[i]);
+            for(int i = 0; i < t.numel(); i++){
+                output[i] = std::max(0.f, t[i]);
             }
 
-            return out;
+            return output;
 
         }
-        static Tensor forward(const Tensor &t){
 
-            if(t.backend() != Backend::CPU) throw std::runtime_error("relu(t1) : error in GPU device");
-            Tensor out = t;
-            for(int i = 0; i < out.numel(); i++){
-                out[i] = std::max(0.f, out[i]);
-            }
+        TensorDesc forward_T(const std::vector<const Tensor*> &inputs) const override{
 
-            return out;
+            TensorDesc t = TensorDesc(*inputs.at(0));
+            if(t.backend_ != Backend::CPU) throw std::runtime_error("relu(t1) : error in GPU device");
+            return t;
         }
 
 };

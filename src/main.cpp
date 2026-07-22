@@ -25,6 +25,11 @@ int main() {
             {"x", "gate", "residual"},
             {"output"},
             {
+                TensorDesc(Shape({2, 3}), Backend::CPU, Dtype::Float32),
+                TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+                TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+            },
+            {
                 {"weight", Tensor(Shape({3, 2}), {1, -1, 2, 0, -1, 3}, Dtype::Float32)},
                 {"bias", Tensor(Shape({2, 2}), {1, -2, 0, 4}, Dtype::Float32)},
                 {"mask", Tensor(Shape({2, 2}), {1, 0, 1, 1}, Dtype::Float32)},
@@ -35,6 +40,7 @@ int main() {
         executor.set_input(graph.value_id("gate"), Tensor(Shape({2, 2}), {2, 0.5, 4, -1}, Dtype::Float32));
         executor.set_input(graph.value_id("residual"), Tensor(Shape({2, 2}), {-1, 1, 2, 20}, Dtype::Float32));
 
+        std::cout << "Static buffer count: " << executor.get_buffers().size() << std::endl;
         executor.run();
 
         std::cout << "Demo graph output:" << std::endl;

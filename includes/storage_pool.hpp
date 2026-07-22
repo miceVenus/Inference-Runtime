@@ -7,7 +7,6 @@
 #include "backend.hpp"
 #include <vector>
 
-
 class StoragePool{
 
     public:
@@ -33,11 +32,28 @@ class StoragePool{
             }
         }
 
-        void put(Tensor & t){
-
-            switch (t.backend()){
+        std::unique_ptr<Storage> get(const StorageDesc & s_desc){
+            switch (s_desc.backend){
                 case Backend::CPU:{
-                    put_into_cpu_pool(t.move_storage());
+                    return std::move(cpu_pool_[s_desc.id]);
+                }
+                
+                case Backend::CUDA:
+                    throw std::runtime_error("CUDA STORAGE IS NOT SUPPORTED");
+
+                default:
+                    throw std::runtime_error("Unknown Backend");
+            }
+        }
+
+        void add(StorageDesc & t){
+            put(StorageFac::create(t.numel, t.backend));
+        }
+
+        void put(std::unique_ptr<Storage> ptr){
+            switch (ptr->backend()){
+                case Backend::CPU:{
+                    cpu_pool_.push_back(std::move(ptr));
                     break;
                 }
                 
@@ -48,6 +64,25 @@ class StoragePool{
                     throw std::runtime_error("Unknown Backend");
             }
         }
+
+        void put(std::unique_ptr<Storage> ptr, StorageId s_id){
+
+            switch (ptr->backend()){
+                case Backend::CPU:{
+                    cpu_pool_[s_id] = std::move(ptr);
+                    break;
+                }
+                
+                case Backend::CUDA:
+                    throw std::runtime_error("CUDA STORAGE IS NOT SUPPORTED");
+
+                default:
+                    throw std::runtime_error("Unknown Backend");
+            }
+        }
+
+
+
 
     private:
         std::vector<std::unique_ptr<Storage>> cpu_pool_;

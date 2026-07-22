@@ -31,6 +31,7 @@ class Graph{
             topological_sort();
             validate();
             desc_deduce();
+            life_span_deduce();
         }
 
         ValueId value_id(const std::string& name) const {
@@ -47,6 +48,13 @@ class Graph{
 
         const IRNode& node(NodeId id) const{
             return nodes_.at(id);
+        }
+
+        const TensorDesc& desc(ValueId id) const{
+
+            if(!value(id).desc().has_value())
+                throw std::runtime_error(std::format("value {} desc is not prepared", value(id).name()));
+            return value(id).desc().value();
         }
 
         const Value& value(ValueId id) const {
@@ -66,6 +74,10 @@ class Graph{
 
         const std::vector<NodeId>& initializers() const{
             return initializers_;
+        }
+
+        const std::pair<size_t, size_t> life_span(ValueId v_id) const{
+            return value(v_id).life_span();
         }
 
     private:
@@ -184,10 +196,66 @@ class Graph{
             }
 
             for(const auto & i : values_){
-                if(!i.desc().has_value()){
+                if(!i.desc().has_value ()){
                     throw std::runtime_error(std::format("value : {} has no desc after deduce", i.name()));  
                 }
+
+                std::cout << i.desc().value().shape_ << std::endl;
             }
+        }
+
+        void life_span_deduce(){
+
+            std::unordered_map<ValueId, std::size_t> v_id_consumer;
+
+            for(size_t index = 0; index < executor_order_.size(); index++){
+
+                ValueId i = executor_order_[index];
+                
+                for(auto j : node(i).inputs()){
+                    if(!v_id_consumer.contains(j)){
+                        v_id_consumer[j] = value(j).consumer().size();
+                    }
+                }
+
+                for(auto j : node(i).outputs()){
+                    if(!v_id_consumer.contains(j)){
+                        v_id_consumer[j] = value(j).consumer().size();
+                    }
+
+                    value(j).set_birth(index);
+                    value(j).set_death(index);
+                }
+
+                for(auto j : outputs()){
+                    value(j).set_death(executor_order_.size());
+                }
+
+                for(auto j : node(i).inputs()){
+                    if(--v_id_consumer[j]){
+                    }else{
+
+                        const auto & wt = initializers();
+                        if(std::find(wt.cbegin(), wt.cend(), j) != wt.cend()){
+                            continue;
+                        }
+
+                        const auto & ot = outputs();
+                        if(std::find(ot.cbegin(), ot.cend(), j) != ot.cend()){
+                            continue;
+                        }
+
+                        const auto & in = inputs();
+                        if(std::find(in.cbegin(), in.cend(), j) != in.cend()){
+                            continue;
+                        }
+
+                        value(j).set_death(index);
+                    }
+                }
+
+            }
+
         }
 };
 

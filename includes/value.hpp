@@ -11,6 +11,7 @@
 #include <initializer_list>
 #include <vector>
 #include <optional>
+#include <cassert>
 
 class Value{
 
@@ -72,6 +73,21 @@ class Value{
             desc_ = std::move(t_desc);
         }
 
+        void set_birth(size_t birth){
+            assert(!birth_.has_value());
+
+            birth_ = birth;
+        }
+
+        void set_death(size_t death){
+            death_ = death;
+        }
+
+        const std::pair<size_t, size_t> life_span() const{
+            assert(birth_.has_value());
+            return {birth_.value(), death_};
+        }
+
         
     private:
 
@@ -80,6 +96,9 @@ class Value{
 
         std::optional<NodeId> producer_;
         std::vector<NodeId> consumer_;
+
+        std::optional<size_t> birth_;
+        size_t death_;
 
         std::optional<TensorDesc> desc_;
 

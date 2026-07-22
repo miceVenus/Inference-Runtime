@@ -22,8 +22,9 @@ class GraphBuilder{
             const std::vector<Node> & nodes,
             const std::vector<std::string> &inputs,
             const std::vector<std::string> &outputs,
+            std::vector<TensorDesc> &&inputs_desc,
             std::unordered_map<std::string, Tensor> &&initializer){
-            set_inputs(inputs);
+            set_inputs(inputs, std::move(inputs_desc));
             set_initializer(std::move(initializer));
             set_outputs(outputs);
 
@@ -105,16 +106,23 @@ class GraphBuilder{
             return id;
         }
 
-        void set_inputs(const std::vector<std::string> & inputs){
+        void set_inputs(const std::vector<std::string> & inputs, std::vector<TensorDesc>&& inputs_desc){
             std::unordered_set<std::string> available;
-            for(const auto & it : inputs){
-                auto [name, inserted] = available.insert(it);
+            if(inputs.size() != inputs_desc.size())
+                throw std::runtime_error("bad input : invalid inputs and desc size");
+            
+            
+            for(auto i = 0; i < inputs.size(); i++){
+                auto [name, inserted] = available.insert(inputs[i]);
                 if(!inserted) throw std::runtime_error("bad model : duplicated input name");
 
                 // allow input name equs output name or initializer
-                ValueId v_id = intern_value(it);
+                ValueId v_id = intern_value(inputs[i]);
+
+                value(v_id).set_desc(std::move(inputs_desc[i]));
                 inputs_.push_back(v_id);
             }
+
         }
 
         void set_outputs(const std::vector<std::string> & outputs){
@@ -130,7 +138,12 @@ class GraphBuilder{
         }
 
         void set_initializer(std::unordered_map<std::string, Tensor> && initializer){
+            std::unordered_set<std::string> available;
+
             for(auto & it : initializer){
+
+                auto [name, inserted] = available.insert(it.first);
+                if(!inserted) throw std::runtime_error("bad model : initializer name is same as input name");
 
                 // allow initializer name equs input name or output name
                 ValueId v_id = intern_value(it.first);

@@ -13,6 +13,7 @@
 #include "value.hpp"
 
 #include <cassert>
+#include <algorithm>
 #include <cmath>
 #include <ctime>
 #include <iostream>
@@ -77,29 +78,6 @@ void test_cpu_storage() {
     assert(moved.raw_data() == original_ptr);
     assert(moved[0] == 1);
     assert(moved[2] == 3);
-}
-
-void test_storage_pool_reuses_same_storage() {
-    StoragePool pool;
-    const TensorDesc tensor_spec(Shape({2, 2}), Backend::CPU, Dtype::Float32);
-
-    Tensor intermediate(tensor_spec);
-    intermediate.fill(42);
-    Float32* intermediate_data = intermediate.raw_data();
-
-    pool.put(intermediate);
-
-    Tensor reused_output(tensor_spec, pool.get(tensor_spec));
-    assert(reused_output.raw_data() == intermediate_data);
-    assert(reused_output.shape() == Shape({2, 2}));
-    assert(reused_output.backend() == Backend::CPU);
-    assert(reused_output.dtype() == Dtype::Float32);
-
-    reused_output.fill(0);
-    expect_data_eq(reused_output, {0, 0, 0, 0});
-
-    Tensor different_size_output(TensorDesc(Shape({2, 3}), Backend::CPU, Dtype::Float32), pool.get(TensorDesc(Shape({2, 3}), Backend::CPU, Dtype::Float32)));
-    assert(different_size_output.raw_data() != intermediate_data);
 }
 
 void test_shape_and_tensor_creation() {
@@ -179,7 +157,7 @@ void test_basic_ops() {
     const Tensor rhs(Shape({2, 3}), {1, -2, 3, -4, 5, -6}, Dtype::Float32);
 
     auto op = OperationFactory::create(OP_TYPE::AddOp);
-    TensorDesc add_meta = op->forward_T({&lhs, &rhs});
+    TensorDesc add_meta = op->forward_T({TensorDesc(lhs), TensorDesc(rhs)});
     assert(add_meta.shape_ == lhs.shape());
     assert(add_meta.dtype_ == Dtype::Float32);
     assert(add_meta.backend_ == Backend::CPU);
@@ -189,7 +167,7 @@ void test_basic_ops() {
     expect_data_eq(add_out, {3, 1, 8, 2, 12, 2});
 
     op = OperationFactory::create(OP_TYPE::MulOp);
-    TensorDesc mul_meta = op->forward_T({&lhs, &rhs});
+    TensorDesc mul_meta = op->forward_T({TensorDesc(lhs), TensorDesc(rhs)});
     assert(mul_meta.shape_ == lhs.shape());
     assert(mul_meta.dtype_ == Dtype::Float32);
     assert(mul_meta.backend_ == Backend::CPU);
@@ -199,7 +177,7 @@ void test_basic_ops() {
     expect_data_eq(mul_out, {2, -6, 15, -24, 35, -48});
 
     op = OperationFactory::create(OP_TYPE::ReluOp);
-    TensorDesc relu_meta = op->forward_T({&rhs});
+    TensorDesc relu_meta = op->forward_T({TensorDesc(rhs)});
     assert(relu_meta.shape_ == rhs.shape());
     assert(relu_meta.dtype_ == Dtype::Float32);
     assert(relu_meta.backend_ == Backend::CPU);
@@ -210,12 +188,14 @@ void test_basic_ops() {
 
     expect_throws([&] {
         auto bad_rhs = Tensor(Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
-        OperationFactory::create(OP_TYPE::AddOp)->forward_T({&lhs, &bad_rhs});
+        OperationFactory::create(OP_TYPE::AddOp)->forward_T(
+            {TensorDesc(lhs), TensorDesc(bad_rhs)});
     });
 
     expect_throws([&] {
         auto bad_rhs = Tensor(Shape({1, 6}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
-        OperationFactory::create(OP_TYPE::MulOp)->forward_T({&lhs, &bad_rhs});
+        OperationFactory::create(OP_TYPE::MulOp)->forward_T(
+            {TensorDesc(lhs), TensorDesc(bad_rhs)});
     });
 }
 
@@ -224,7 +204,7 @@ void test_matmul_op() {
     const Tensor rhs(Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
 
     auto op = OperationFactory::create(OP_TYPE::MatMulOp);
-    TensorDesc result_meta = op->forward_T({&lhs, &rhs});
+    TensorDesc result_meta = op->forward_T({TensorDesc(lhs), TensorDesc(rhs)});
     assert(result_meta.shape_ == Shape({2, 2}));
     assert(result_meta.dtype_ == Dtype::Float32);
     assert(result_meta.backend_ == Backend::CPU);
@@ -236,12 +216,12 @@ void test_matmul_op() {
 
     const Tensor vector_like(Shape({3}), {1, 2, 3}, Dtype::Float32);
     expect_throws([&] {
-        op->forward_T({&vector_like, &rhs});
+        op->forward_T({TensorDesc(vector_like), TensorDesc(rhs)});
     });
 
     const Tensor incompatible_rhs(Shape({2, 2}), {1, 2, 3, 4}, Dtype::Float32);
     expect_throws([&] {
-        op->forward_T({&lhs, &incompatible_rhs});
+        op->forward_T({TensorDesc(lhs), TensorDesc(incompatible_rhs)});
     });
 }
 
@@ -254,6 +234,10 @@ void test_graph_validation() {
         {mul, relu, add},
         {"a", "b"},
         {"result"},
+        {
+            TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+            TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+        },
         {});
     const auto& executor_order = graph.executor_order();
 
@@ -270,6 +254,7 @@ void test_graph_validation() {
             {Node({"a", "missing"}, {"c"}, "bad_add", OP_TYPE::AddOp)},
             {"a"},
             {"c"},
+            {TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32)},
             {});
     });
 
@@ -282,6 +267,10 @@ void test_graph_validation() {
             },
             {"a", "b"},
             {"c"},
+            {
+                TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+                TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+            },
             {});
     });
 
@@ -291,6 +280,7 @@ void test_graph_validation() {
             {Node({"a"}, {"c"}, "bad_add", OP_TYPE::AddOp)},
             {"a"},
             {"c"},
+            {TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32)},
             {});
     });
 
@@ -300,6 +290,7 @@ void test_graph_validation() {
             {Node({"a"}, {"c"}, "bad_matmul", OP_TYPE::MatMulOp)},
             {"a"},
             {"c"},
+            {TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32)},
             {});
     });
 
@@ -312,6 +303,10 @@ void test_graph_validation() {
             },
             {"a", "b"},
             {"out"},
+            {
+                TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+                TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+            },
             {});
     });
 
@@ -324,8 +319,87 @@ void test_graph_validation() {
             },
             {"input"},
             {"b"},
+            {TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32)},
             {});
     });
+}
+
+void test_life_span_uses_last_consumer() {
+    const Node producer(
+        {"a", "b"}, {"shared"}, "produce_shared", OP_TYPE::AddOp);
+    const Node left_branch(
+        {"shared"}, {"left"}, "left_branch", OP_TYPE::ReluOp);
+    const Node right_branch(
+        {"shared", "scale"}, {"right"}, "right_branch", OP_TYPE::MulOp);
+    const Node join(
+        {"left", "right"}, {"output"}, "join_branches", OP_TYPE::AddOp);
+
+    const Graph graph = GraphBuilder().build(
+        "branching_life_span",
+        {join, right_branch, left_branch, producer},
+        {"a", "b", "scale"},
+        {"output"},
+        {
+            TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+            TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+            TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+        },
+        {});
+
+    const ValueId shared_id = graph.value_id("shared");
+    const auto& order = graph.executor_order();
+    const auto& consumers = graph.value(shared_id).consumer();
+
+    assert(consumers.size() == 2);
+
+    std::vector<std::size_t> consumer_positions;
+    for (NodeId consumer : consumers) {
+        const auto position = std::find(order.cbegin(), order.cend(), consumer);
+        assert(position != order.cend());
+        consumer_positions.push_back(
+            static_cast<std::size_t>(position - order.cbegin()));
+    }
+
+    const auto [first_consumer, last_consumer] = std::minmax_element(
+        consumer_positions.cbegin(), consumer_positions.cend());
+    assert(*first_consumer < *last_consumer);
+
+    const auto span = graph.life_span(shared_id);
+    assert(span.first < *first_consumer);
+    assert(span.second == *last_consumer);
+    assert(span.second != *first_consumer);
+
+    Executor executor(graph);
+    assert(executor.get_buffers().size() == 3);
+
+    const ValueId left_id = graph.value_id("left");
+    const ValueId right_id = graph.value_id("right");
+    const ValueId output_id = graph.value_id("output");
+
+    const StorageId shared_buffer = executor.get_b_id(shared_id);
+    const StorageId left_buffer = executor.get_b_id(left_id);
+    const StorageId right_buffer = executor.get_b_id(right_id);
+    const StorageId output_buffer = executor.get_b_id(output_id);
+
+    assert(shared_buffer == output_buffer);
+    assert(shared_buffer != left_buffer);
+    assert(shared_buffer != right_buffer);
+
+    StoragePool pool;
+    for (auto buffer : executor.get_buffers()) {
+        pool.add(buffer);
+    }
+
+    auto shared_storage = pool.get(executor.get_buffers()[shared_buffer]);
+    const Float32* shared_data = shared_storage->raw_data();
+    pool.put(std::move(shared_storage), shared_buffer);
+
+    auto output_storage = pool.get(executor.get_buffers()[output_buffer]);
+    assert(output_storage->raw_data() == shared_data);
+
+    auto left_storage = pool.get(executor.get_buffers()[left_buffer]);
+    auto right_storage = pool.get(executor.get_buffers()[right_buffer]);
+    assert(left_storage->raw_data() != right_storage->raw_data());
 }
 
 void test_complex_graph_execution() {
@@ -341,6 +415,11 @@ void test_complex_graph_execution() {
         {mask, relu, residual, matmul, gated, add_bias},
         {"x", "gate", "residual"},
         {"output"},
+        {
+            TensorDesc(Shape({2, 3}), Backend::CPU, Dtype::Float32),
+            TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+            TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
+        },
         {
             {"weight", Tensor(Shape({3, 2}), {1, -1, 2, 0, -1, 3}, Dtype::Float32)},
             {"bias", Tensor(Shape({2, 2}), {1, -2, 0, 4}, Dtype::Float32)},
@@ -362,6 +441,9 @@ void test_complex_graph_execution() {
     assert(!graph.value(graph.value_id("x")).is_initializer());
     assert(graph.initializers().size() == 3);
 
+    Executor executor(graph);
+    assert(executor.get_buffers().size() == 2);
+
     Executor invalid_input_executor(graph);
     expect_throws([&] {
         invalid_input_executor.set_input(
@@ -369,7 +451,6 @@ void test_complex_graph_execution() {
             Tensor(Shape({3, 2}), {0, 0, 0, 0, 0, 0}, Dtype::Float32));
     });
 
-    Executor executor(graph);
     executor.set_input(graph.value_id("x"), Tensor(Shape({2, 3}), {1, 2, 3, -1, 0, 2}, Dtype::Float32));
     executor.set_input(graph.value_id("gate"), Tensor(Shape({2, 2}), {2, 0.5, 4, -1}, Dtype::Float32));
     executor.set_input(graph.value_id("residual"), Tensor(Shape({2, 2}), {-1, 1, 2, 20}, Dtype::Float32));
@@ -380,6 +461,18 @@ void test_complex_graph_execution() {
     assert(output.backend() == Backend::CPU);
     expect_data_eq(output, {5, 0, 2, 9});
     expect_data_eq(executor.get_tensor(graph.value_id("weight")), {1, -1, 2, 0, -1, 3});
+
+    const std::size_t storage_count_after_first_run = executor.get_buffers().size();
+    const Float32* output_data_after_first_run = output.raw_data();
+
+    executor.set_input(graph.value_id("x"), Tensor(Shape({2, 3}), {0, 1, 2, 1, 0, 1}, Dtype::Float32));
+    executor.set_input(graph.value_id("gate"), Tensor(Shape({2, 2}), {2, 0.5, 4, -1}, Dtype::Float32));
+    executor.set_input(graph.value_id("residual"), Tensor(Shape({2, 2}), {-1, 1, 2, 20}, Dtype::Float32));
+    executor.run();
+
+    assert(executor.get_buffers().size() == storage_count_after_first_run);
+    assert(executor.get_output("output").raw_data() == output_data_after_first_run);
+    expect_data_eq(executor.get_output("output"), {1, 0, 2, 14});
 
     expect_throws([&] {
         executor.get_output("biased");
@@ -404,10 +497,10 @@ int main() {
     test_value_initializer_semantics();
     test_cpu_storage();
     test_storage_interface();
-    test_storage_pool_reuses_same_storage();
     test_basic_ops();
     test_matmul_op();
     test_graph_validation();
+    test_life_span_uses_last_consumer();
     test_complex_graph_execution();
 
     std::cout << "All runtime tests passed." << std::endl;

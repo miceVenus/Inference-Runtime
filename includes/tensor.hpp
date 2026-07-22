@@ -74,6 +74,14 @@ class TensorDesc{
         TensorDesc(const Shape shape, Backend backend, Dtype dtype);
 
         explicit TensorDesc(const Tensor & t);
+
+        bool operator==(const TensorDesc & t_T) const{
+            return (shape_ == t_T.shape_ && backend_ == t_T.backend_ && dtype_ == t_T.dtype_);
+        }
+
+        bool operator!=(const TensorDesc & t_T) const{
+            return !(*this == t_T);
+        }
 };
 
 void print(const Tensor &tensor);

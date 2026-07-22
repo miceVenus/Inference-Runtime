@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
-add_library(runtime src/tensor.cpp src/shape.cpp src/dtype.cpp)
+add_library(runtime src/tensor.cpp src/shape.cpp src/dtype.cpp src/storage.cpp)
 
 
 add_executable(runtime_demo src/main.cpp)

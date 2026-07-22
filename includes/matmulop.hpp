@@ -9,9 +9,9 @@ class MatMulOp : public Operation{
     public:
 
 
-        TensorDesc forward_T(const std::vector<const Tensor*> &inputs) const override{
-            TensorDesc t1 = TensorDesc(*inputs.at(0));
-            TensorDesc t2 = TensorDesc(*inputs.at(1));
+        TensorDesc forward_T(const std::vector<TensorDesc> &inputs) const override{
+            const TensorDesc& t1 = inputs.at(0);
+            const TensorDesc& t2 = inputs.at(1);
 
             if(t1.backend_ != t2.backend_) throw std::runtime_error("matmul(t1, t2) : error in different device");
             if(t1.backend_ != Backend::CPU) throw std::runtime_error("matmul(t1, t2) : error in GPU device");

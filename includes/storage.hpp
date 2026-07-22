@@ -3,16 +3,33 @@
 
 #include "dtype.hpp"
 #include "backend.hpp"
+
 #include <vector>
 #include <cstddef>
 #include <utility>
 #include <memory>
 #include <algorithm>
 
+using StorageId=std::size_t;
 
+class TensorDesc;
+
+class StorageDesc{
+    public:
+        StorageDesc(const TensorDesc & desc);
+        
+        size_t size_bytes;
+        Backend backend;
+
+        StorageId id;
+        size_t numel;
+        Dtype dtype;
+        size_t ava_after;
+};
 
 class Storage{
     public:
+
         virtual ~Storage() = default;
 
         virtual Backend backend() const noexcept = 0;
@@ -30,60 +47,36 @@ class Storage{
 class CpuStorage final : public Storage{
 
     public:
-        explicit CpuStorage(std::size_t numel)
-        :data_(numel, 0){}
+        explicit CpuStorage(std::size_t numel);
 
-        CpuStorage(std::vector<Float32> data)
-        :data_(std::move(data)){}
+        CpuStorage(std::vector<Float32> data);
 
 
-        CpuStorage(const CpuStorage &storage)
-        :data_(storage.data_){}
+        CpuStorage(const CpuStorage &storage);
 
 
-        CpuStorage(CpuStorage &&storage) noexcept
-        :data_(std::move(storage.data_)){}
+        CpuStorage(CpuStorage &&storage) noexcept;
 
 
-        Backend backend() const noexcept override{
-            return Backend::CPU;
-        }
-        std::size_t size() const noexcept override{
-            return data_.size();
-        }
+        Backend backend() const noexcept override;
 
-        std::size_t size_bytes() const noexcept override{
-            return data_.size() * sizeof(Float32);
-        }
+        std::size_t size() const noexcept override;
 
-        Float32 * raw_data() override {
-            return data_.data();
-        }
+        std::size_t size_bytes() const noexcept override;
 
-        const Float32 * raw_data() const override{
-            return data_.data();
-        }
+        Float32 * raw_data() override;
 
-        Float32& operator[](std::size_t index){
-            return data_.at(index);
-        }
+        const Float32 * raw_data() const override;
 
-        const Float32& operator[](std::size_t index) const{
-            return data_.at(index);
-        }
+        Float32& operator[](std::size_t index);
 
-        CpuStorage& operator=(CpuStorage storage) {
-            data_ = std::move(storage.data_);
-            return *this;
-        }
+        const Float32& operator[](std::size_t index) const;
 
-        std::unique_ptr<Storage> clone() const override{
-            return std::make_unique<CpuStorage>(*this);
-        }
+        CpuStorage& operator=(CpuStorage storage);
 
-        void fill(Float32 value) override{
-            std::fill(data_.begin(), data_.end(), value);
-        }
+        std::unique_ptr<Storage> clone() const override;
+
+        void fill(Float32 value) override;
 
     private:
         std::vector<Float32> data_;

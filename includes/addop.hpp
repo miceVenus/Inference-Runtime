@@ -10,17 +10,17 @@ class AddOp : public Operation{
     public:
 
         
-        TensorDesc forward_T(const std::vector<const Tensor*> &inputs) const override{
-            TensorDesc t1 = TensorDesc(*inputs.at(0));
-            TensorDesc t2 = TensorDesc(*inputs.at(1));
+        // TensorDesc forward_T(const std::vector<const Tensor*> &inputs) const override{
+        //     TensorDesc t1 = TensorDesc(*inputs.at(0));
+        //     TensorDesc t2 = TensorDesc(*inputs.at(1));
 
-            if(t1.backend_ != t2.backend_) throw std::runtime_error("add(t1, t2) : error in different device");
-            if(t1.backend_ != Backend::CPU) throw std::runtime_error("add(t1, t2) : error in GPU device");
-            if(t1.dtype_ != t2.dtype_) throw std::runtime_error("add(t1, t2) : error in dtype");
-            if(t1.shape_ != t2.shape_) throw std::runtime_error("add(t1, t2) : error in shape");
+        //     if(t1.backend_ != t2.backend_) throw std::runtime_error("add(t1, t2) : error in different device");
+        //     if(t1.backend_ != Backend::CPU) throw std::runtime_error("add(t1, t2) : error in GPU device");
+        //     if(t1.dtype_ != t2.dtype_) throw std::runtime_error("add(t1, t2) : error in dtype");
+        //     if(t1.shape_ != t2.shape_) throw std::runtime_error("add(t1, t2) : error in shape");
 
-            return TensorDesc(t1.shape_, t1.backend_, t1.dtype_);
-        }
+        //     return TensorDesc(t1.shape_, t1.backend_, t1.dtype_);
+        // }
 
         TensorDesc forward_T(const std::vector<TensorDesc> &inputs) const override{
             const TensorDesc & t1 = inputs[0];

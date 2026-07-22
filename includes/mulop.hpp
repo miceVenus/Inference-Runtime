@@ -21,10 +21,10 @@ class MulOp : public Operation{
             return output;
         }
 
-        TensorDesc forward_T(const std::vector<const Tensor*> &inputs) const override{
+        TensorDesc forward_T(const std::vector<TensorDesc> &inputs) const override{
 
-            TensorDesc t1 = TensorDesc(*inputs.at(0));
-            TensorDesc t2 = TensorDesc(*inputs.at(1));
+            const TensorDesc& t1 = inputs.at(0);
+            const TensorDesc& t2 = inputs.at(1);
 
             if(t1.backend_ != t2.backend_) throw std::runtime_error("mul(t1, t2) : error in different device");
             if(t1.backend_ != Backend::CPU) throw std::runtime_error("mul(t1, t2) : error in GPU device");

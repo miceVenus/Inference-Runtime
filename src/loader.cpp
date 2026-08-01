@@ -1,0 +1,357 @@
+#include "onnx.pb.h"
+#include "loader.hpp"
+#include "graph.hpp"
+#include "graph_builder.hpp"
+
+#include <fstream>
+#include <filesystem>
+#include <iostream>
+#include <memory>
+#include <png.h>
+#include <map>
+#include <string>
+
+namespace{
+
+
+std::vector<long> shape_dims_trans(const google::protobuf::RepeatedPtrField<onnx::TensorShapeProto_Dimension> & onnx_dims){
+    std::vector<long> res;
+    for(auto & d : onnx_dims){
+        if(d.has_dim_param()){
+            res.push_back(1);
+        }else if(d.has_dim_value()){
+            res.push_back(d.dim_value());
+        }else{
+            throw std::runtime_error("unknown dims");
+        }
+    }
+    return res;
+}
+
+std::vector<long> shape_dims_trans(const google::protobuf::RepeatedField<google::protobuf::int64> & onnx_dims){
+    std::vector<long> res;
+    res.assign(onnx_dims.begin(), onnx_dims.end());
+    return res;
+}
+
+Dtype load_dtype(const int onnx_dtype){
+    switch (onnx_dtype) {
+        case onnx::TensorProto::FLOAT:
+            return Dtype::Float32;
+        case onnx::TensorProto::FLOAT16:
+            break;
+        case onnx::TensorProto::DOUBLE:
+            break;
+        case onnx::TensorProto::INT32:
+            // return Dtype::Float32;
+            break;
+        case onnx::TensorProto::INT64:
+            break;
+        case onnx::TensorProto::BOOL:
+            break;
+        default:
+            throw std::runtime_error("unknown onnx dtype");
+    }
+
+    throw std::runtime_error(std::format("unsupport onnx type {}", onnx::TensorProto_DataType_Name(onnx_dtype)));
+}
+
+std::vector<Float32> load_data(const onnx::TensorProto &tensor){
+    switch (tensor.data_type()) {
+        case onnx::TensorProto::FLOAT:
+            if (tensor.has_raw_data()) {
+                std::vector<Float32> res(tensor.raw_data().size() / sizeof(Float32));
+                std::memcpy(
+                    res.data(),
+                    tensor.raw_data().data(),
+                    tensor.raw_data().size());
+                return res;
+            } else {
+                std::vector<Float32> res(tensor.float_data().begin(), tensor.float_data().end());
+                return res;
+            }
+
+        case onnx::TensorProto::DOUBLE:
+            // if (tensor.has_raw_data()) {
+            //     std::vector<Float32> res(tensor.raw_data().size() / sizeof(Float32));
+            //     std::memcpy(
+            //         res.data(),
+            //         tensor.raw_data().data(),
+            //         tensor.raw_data().size());
+            //     return res;
+            // } else {
+            //     tensor.float_data();
+            //     std::vector<Float32> res(tensor.float_data().begin(), tensor.float_data().end());
+            //     return res;
+            // }
+            break;
+
+        case onnx::TensorProto::INT64:
+            // if (tensor.has_raw_data()) {
+            //     std::vector<Float32> res(tensor.raw_data().size() / sizeof(Float32));
+            //     std::memcpy(
+            //         res.data(),
+            //         tensor.raw_data().data(),
+            //         tensor.raw_data().size());
+            //     return res;
+            // } else {
+            //     tensor.float_data();
+            //     std::vector<Float32> res(tensor.float_data().begin(), tensor.float_data().end());
+            //     return res;
+            // }
+            break;
+
+        case onnx::TensorProto::INT32:
+            // if (tensor.has_raw_data()) {
+            //     std::vector<Float32> res(tensor.raw_data().size() / sizeof(Float32));
+            //     std::memcpy(
+            //         res.data(),
+            //         tensor.raw_data().data(),
+            //         tensor.raw_data().size());
+            //     return res;
+            // } else {
+            //     std::vector<Float32> res(tensor.int32_data().begin(), tensor.int32_data().end());
+            //     return res;
+            // }
+            break;
+
+        case onnx::TensorProto::STRING:
+            // if (tensor.has_raw_data()) {
+            //     std::vector<Float32> res(tensor.raw_data().size() / sizeof(Float32));
+            //     std::memcpy(
+            //         res.data(),
+            //         tensor.raw_data().data(),
+            //         tensor.raw_data().size());
+            //     return res;
+            // } else {
+            //     tensor.float_data();
+            //     std::vector<Float32> res(tensor.float_data().begin(), tensor.float_data().end());
+            //     return res;
+            // }
+            break;
+
+        default:
+            throw std::runtime_error("unknown onnx dtype");
+    }
+
+    throw std::runtime_error(std::format("unsupport onnx type {}", onnx::TensorProto_DataType_Name(tensor.data_type())));
+}
+
+
+OP_TYPE load_op_type(const std::string& type) {
+    if (type == "Add")    return OP_TYPE::AddOp;
+    if (type == "Mul")    return OP_TYPE::MulOp;
+    if (type == "Relu")   return OP_TYPE::ReluOp;
+    if (type == "MatMul") return OP_TYPE::MatMulOp;
+
+    throw std::runtime_error("unsupported ONNX operator: " + type);
+}
+
+onnx::ModelProto onnx_load(const std::string path){
+
+    onnx::ModelProto model;
+
+    std::ifstream file(path);
+
+    if (!file.is_open()) {
+        throw std::runtime_error(
+            "Failed to open model: " + path
+        );
+    }
+
+    if (!model.ParseFromIstream(&file)) {
+        throw std::runtime_error(
+            "Failed to parse ONNX model: " + path
+        );
+    }
+
+    if (!model.has_graph()) {
+        throw std::runtime_error(
+            "Invalid ONNX model: graph is missing"
+        );
+    }
+    return model;
+}
+
+std::vector<Node> load_node(onnx::ModelProto & model){
+    auto & graph = model.graph();
+
+    std::vector<Node> res;
+
+    for(int i = 0; i < graph.node_size(); i++){
+        auto & node = graph.node(i);
+
+        res.emplace_back(
+            std::vector<std::string>(node.input().begin(), node.input().end()),
+            std::vector<std::string>(node.output().begin(), node.output().end()),
+            node.name(),
+            load_op_type(node.op_type())
+        );
+    }
+
+    return res;
+}
+
+std::vector<std::string> load_input(onnx::ModelProto & model){
+    std::vector<std::string> result;
+    result.reserve(model.graph().input_size());
+
+    for (const auto& input : model.graph().input()) {
+        result.push_back(input.name());
+    }
+
+    return result;
+}
+
+std::vector<std::string> load_output(onnx::ModelProto & model){
+
+    std::vector<std::string> result;
+    result.reserve(model.graph().output_size());
+
+    for (const auto& output : model.graph().output()) {
+        result.push_back(output.name());
+    }
+
+    return result;
+}
+
+std::vector<TensorDesc> load_input_desc(onnx::ModelProto & model){
+    auto & graph = model.graph();
+    std::vector<TensorDesc> res;
+
+    for(auto & i : graph.input()){
+        auto & onnx_shape = i.type().tensor_type().shape();
+        auto onnx_dtype = i.type().tensor_type().elem_type();
+
+        res.emplace_back(
+            Shape(shape_dims_trans(onnx_shape.dim())),
+            Backend::CPU,
+            load_dtype(onnx_dtype)
+        );
+    }
+
+    return res;
+}
+
+
+std::unordered_map<std::string, Tensor> load_initializer(onnx::ModelProto & model){
+    auto & graph = model.graph();
+    std::unordered_map<std::string, Tensor> res;
+
+    for(auto & i : graph.initializer()){
+        res[i.name()] = 
+        Tensor(
+            Shape(shape_dims_trans(i.dims())), 
+            load_data(i),
+            load_dtype(i.data_type()),
+            Backend::CPU
+        );
+    }
+
+    return res;
+}
+}
+
+
+Tensor load_image(const std::filesystem::path& path) {
+    png_image image{};
+    image.version = PNG_IMAGE_VERSION;
+
+    if (!png_image_begin_read_from_file(&image, path.c_str())) {
+        throw std::runtime_error(
+            "failed to read PNG header: " + std::string(image.message));
+    }
+
+    image.format = PNG_FORMAT_GRAY;
+    std::vector<unsigned char> pixels(PNG_IMAGE_SIZE(image));
+    if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr)) {
+        const std::string message = image.message;
+        png_image_free(&image);
+        throw std::runtime_error("failed to decode PNG: " + message);
+    }
+
+    png_image_free(&image);
+
+    std::vector<Float32> data;
+    data.reserve(pixels.size());
+    for (unsigned char pixel : pixels) {
+        const Float32 normalized = static_cast<Float32>(pixel) / 255.0f;
+        data.push_back((normalized - 0.1307f) / 0.3081f);
+    }
+
+    return Tensor(Shape({1, 1, 28, 28}), std::move(data), Dtype::Float32);
+}
+
+Graph Loader::load(const std::string path){
+    onnx::ModelProto model = onnx_load(path);
+    GraphBuilder graph_builder;
+    
+    std::vector<Node> nodes;
+    std::vector<std::string> inputs;
+    std::vector<std::string> outputs;
+    std::vector<TensorDesc> inputs_desc;
+    std::unordered_map<std::string, Tensor> initializer;
+
+    return graph_builder.build(
+        model.graph().name(),
+        load_node(model),
+        load_input(model),
+        load_output(model),
+        load_input_desc(model),
+        load_initializer(model)
+    );
+}
+
+
+
+// void inspect(const onnx::ModelProto& model){
+
+//     std::cout << "ONNX model loaded successfully\n";
+//     std::cout << "IR version: " << model.ir_version() << '\n';
+//     std::cout << "Producer: " << model.producer_name() << '\n';
+//     std::cout << "Graph name: " << model.graph().name() << '\n';
+
+//     std::cout << "graph inputs:" << model.graph().input_size() << '\n';
+
+//     std::cout << "inputs:" << model.graph().input().at(0).name() << '\n';
+//     std::cout << "graph outputs:" << model.graph().output_size() << '\n';
+//     std::cout << "graph initializers:" << model.graph().initializer_size() << '\n';
+//     std::cout << "graph nodes:" << model.graph().node_size() << '\n';
+//     std::cout << "graph opset:" << model.opset_import_size() << '\n';
+
+//     for(const auto & i : model.opset_import()){
+//         const std::string domain = i.domain().empty() ? "ai.onnx" : i.domain();
+
+//         std::cout << "Domain: " << domain
+//                 << ", opset: " << i.version()
+//                 << '\n';
+
+//     }
+//     using op_key = std::pair<std::string, std::string>;
+
+//     std::map<op_key, size_t> operators;
+
+//     for (const auto& node : model.graph().node()) {
+//         const std::string domain =
+//             node.domain().empty() ? "ai.onnx" : node.domain();
+
+//         const op_key key{
+//             domain,
+//             node.op_type()
+//         };
+
+//         ++operators[key];
+//     }
+
+//     for(const auto & i : operators){
+//         std::cout << "name: " << i.first.second << " nums: " << i.second << std::endl;
+//     }
+
+// }
+
+// int main(){
+
+//     onnx::ModelProto model = onnx_load("../experiments/mnist_onnx/artifacts/mnist_pressure_net.onnx");
+//     inspect(model);
+//     return 0;
+// }

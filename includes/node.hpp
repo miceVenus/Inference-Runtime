@@ -22,6 +22,15 @@ class Node{
 
         }
 
+        Node(   std::vector<std::string> in, 
+                std::vector<std::string> out,
+                std::string name,
+                OP_TYPE op_type)
+        :output_(std::move(out)), input_(std::move(in)), name_(std::move(name)), op_type_(op_type){
+
+        }
+
+
         Node() = default;
 
         const std::vector<std::string>& outputs() const{

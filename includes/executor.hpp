@@ -101,9 +101,8 @@ class Executor{
                 set_tensor(v_id, std::move(op->forward(t, out.fill(0))));
 
                 for(auto j : e_graph_.node(i).inputs()){
-                    Tensor & t = e_map_[j];
-
                     if(v_b_map_.contains(j)){
+                        Tensor & t = e_map_[j];
                         auto tmp = e_graph_.life_span(j).second;
                         if(e_graph_.life_span(j).second == index){
                             t.fill(0);
@@ -176,6 +175,7 @@ class Executor{
             for(auto & it : v_b_map_){
                 if(e_map_.contains(it.first)){
                     mem_pool_.put(e_map_[it.first].move_storage(), it.second);
+                    e_map_.erase(it.first);
                 }
             }
         }

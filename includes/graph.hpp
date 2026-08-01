@@ -171,9 +171,20 @@ class Graph{
                 }
             }
 
-            for(auto i : initializers_){
-                value(i).set_desc(TensorDesc(value(i).initializer().value()));
+            for (auto i : initializers_) {
+                TensorDesc initializer_desc(value(i).initializer().value());
+
+                if (!value(i).desc().has_value()) 
+                    value(i).set_desc(initializer_desc);
+
+                else if (value(i).desc().value() != initializer_desc) {
+                    throw std::runtime_error("initializer and input descriptions conflict");
+                }
             }
+
+            // for(auto i : initializers_){
+            //     value(i).set_desc(TensorDesc(value(i).initializer().value()));
+            // }
 
 
             for(auto i : executor_order_){

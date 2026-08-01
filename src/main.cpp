@@ -1,54 +1,78 @@
 #include "executor.hpp"
-#include "graph.hpp"
-#include "graph_builder.hpp"
-#include "node.hpp"
-#include "operation.hpp"
+#include "loader.hpp"
 #include "tensor.hpp"
 
-#include <exception>
+#include <png.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <filesystem>
 #include <iostream>
-#include <unordered_map>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
-int main() {
-    try {
-        const Node matmul({"x", "weight"}, {"linear"}, "matmul_0", OP_TYPE::MatMulOp);
-        const Node add_bias({"linear", "bias"}, {"biased"}, "add_bias", OP_TYPE::AddOp);
-        const Node relu({"biased"}, {"activated"}, "relu_0", OP_TYPE::ReluOp);
-        const Node gated({"activated", "gate"}, {"gated"}, "mul_gate", OP_TYPE::MulOp);
-        const Node residual({"gated", "residual"}, {"residual_sum"}, "add_residual", OP_TYPE::AddOp);
-        const Node mask({"residual_sum", "mask"}, {"output"}, "mul_mask", OP_TYPE::MulOp);
+namespace {
 
-        Graph graph = GraphBuilder().build(
-            "demo_graph",
-            {mask, relu, residual, matmul, gated, add_bias},
-            {"x", "gate", "residual"},
-            {"output"},
-            {
-                TensorDesc(Shape({2, 3}), Backend::CPU, Dtype::Float32),
-                TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
-                TensorDesc(Shape({2, 2}), Backend::CPU, Dtype::Float32),
-            },
-            {
-                {"weight", Tensor(Shape({3, 2}), {1, -1, 2, 0, -1, 3}, Dtype::Float32)},
-                {"bias", Tensor(Shape({2, 2}), {1, -2, 0, 4}, Dtype::Float32)},
-                {"mask", Tensor(Shape({2, 2}), {1, 0, 1, 1}, Dtype::Float32)},
-            });
+std::filesystem::path find_file(const std::filesystem::path& path) {
+    if (std::filesystem::exists(path)) {
+        return path;
+    }
+
+    const auto from_build = std::filesystem::path("..") / path;
+    if (std::filesystem::exists(from_build)) {
+        return from_build;
+    }
+
+    throw std::runtime_error("file not found: " + path.string());
+}
+
+}  // namespace
+
+int main() {
+    constexpr const char* model_name =
+        "experiments/mnist_onnx/artifacts/mnist_pressure_net.onnx";
+    constexpr const char* image_name = "test_samples/mnist_test_00000_label_7.png";
+
+    try {
+        const auto model_path = find_file(model_name);
+        const auto image_path = find_file(image_name);
+
+        Tensor image = load_image(image_path);
+        std::cout << "Loaded input image: " << image_path << '\n';
+
+        std::cout << "Loading model: " << model_path << '\n';
+        Graph graph = Loader::load(model_path.string());
+
+        if (graph.inputs().size() != 1 || graph.outputs().size() != 1) {
+            throw std::runtime_error("MNIST demo expects one input and one output");
+        }
+
+        const ValueId input_id = graph.inputs().front();
+        const ValueId output_id = graph.outputs().front();
+        const std::string output_name = graph.value(output_id).name();
+
+        if (TensorDesc(image) != graph.desc(input_id)) {
+            throw std::runtime_error("MNIST image shape does not match model input");
+        }
 
         Executor executor(graph);
-        executor.set_input(graph.value_id("x"), Tensor(Shape({2, 3}), {1, 2, 3, -1, 0, 2}, Dtype::Float32));
-        executor.set_input(graph.value_id("gate"), Tensor(Shape({2, 2}), {2, 0.5, 4, -1}, Dtype::Float32));
-        executor.set_input(graph.value_id("residual"), Tensor(Shape({2, 2}), {-1, 1, 2, 20}, Dtype::Float32));
-
-        std::cout << "Static buffer count: " << executor.get_buffers().size() << std::endl;
+        executor.set_input(input_id, std::move(image));
         executor.run();
 
-        std::cout << "Demo graph output:" << std::endl;
-        print(executor.get_output("output"));
+        const Tensor& logits = executor.get_output(output_name);
+        const auto best = std::max_element(
+            logits.raw_data(), logits.raw_data() + logits.numel());
+        const std::size_t predicted =
+            static_cast<std::size_t>(best - logits.raw_data());
 
+        std::cout << "Output: " << output_name << '\n';
+        print(logits);
+        std::cout << "Predicted digit: " << predicted
+                  << " (expected label: 7)\n";
         return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << '\n';
+    } catch (const std::exception& error) {
+        std::cerr << "Inference failed: " << error.what() << '\n';
         return 1;
     }
 }

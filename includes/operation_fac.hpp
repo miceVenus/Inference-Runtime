@@ -5,6 +5,7 @@
 #include "mulop.hpp"
 #include "matmulop.hpp"
 #include "reluop.hpp"
+#include "convop.hpp"
 
 #include "operation.hpp"
 #include <memory>
@@ -13,8 +14,8 @@
 
 class OperationFactory{
     public:
-        static std::unique_ptr<Operation> create(OP_TYPE type){
-            switch (type){
+        static std::unique_ptr<Operation> create(const IRNode & node){
+            switch (node.op_type()){
                 case OP_TYPE::AddOp:
                     return std::make_unique<AddOp>();
 
@@ -26,6 +27,9 @@ class OperationFactory{
 
                 case OP_TYPE::ReluOp:
                     return std::make_unique<ReluOp>();
+
+                case OP_TYPE::ConvOp:
+                    return std::make_unique<ConvOp>(std::get<ConvParam>(node.attribute()));
 
                 default:
                     throw std::runtime_error(std::format("unknown OP_TYPE in operation factory"));
@@ -46,6 +50,10 @@ class OperationFactory{
 
                 case OP_TYPE::MatMulOp:
                     return std::pair<std::size_t, std::size_t>(2, 1);
+                
+                case OP_TYPE::ConvOp:
+                    return std::pair<std::size_t, std::size_t>(3, 1);
+                
             
             default:
                 throw std::runtime_error(std::format("unknown OP_TYPE in operation factory when schema"));

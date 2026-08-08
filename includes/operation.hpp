@@ -9,6 +9,7 @@ enum class OP_TYPE{
     MulOp,
     ReluOp,
     MatMulOp,
+    ConvOp
 };
 
 class Operation{

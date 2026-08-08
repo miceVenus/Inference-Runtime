@@ -2,6 +2,7 @@
 #include "loader.hpp"
 #include "graph.hpp"
 #include "graph_builder.hpp"
+#include "op_param.hpp"
 
 #include <fstream>
 #include <filesystem>
@@ -32,6 +33,64 @@ std::vector<long> shape_dims_trans(const google::protobuf::RepeatedField<google:
     std::vector<long> res;
     res.assign(onnx_dims.begin(), onnx_dims.end());
     return res;
+}
+
+OpParam load_attribute(const onnx::NodeProto &node){
+
+    OpParam op_param;
+
+    auto load_ints = [](std::vector<long> & vec, const onnx::AttributeProto &attr){
+        if (attr.type() != onnx::AttributeProto::INTS) {
+            throw std::runtime_error("Conv.strides must be INTS");
+        }
+        vec.assign(
+            attr.ints().begin(),
+            attr.ints().end()
+        );
+    };
+
+    auto load_int = [](long &param, const onnx::AttributeProto &attr){
+        if (attr.type() != onnx::AttributeProto::INT) {
+            throw std::runtime_error(
+                "Conv.group must be INT"
+            );
+        }
+
+        param = attr.i();
+    };
+
+    auto load_string = [](std::string &str, const onnx::AttributeProto &attr){
+        if (attr.type() != onnx::AttributeProto::STRING) {
+            throw std::runtime_error(
+                "Conv.group must be INT"
+            );
+        }
+
+        str = attr.s();
+    };
+
+    if(node.op_type() == "Conv"){
+        ConvParam param;
+        for(const auto & attr : node.attribute()){
+            if (attr.name() == "group") {
+                load_int(param.group, attr);
+            } else if(attr.name() == "strides") {
+                load_ints(param.strides, attr);
+            } else if(attr.name() == "dilations"){
+                load_ints(param.dilations, attr);
+            } else if(attr.name() == "pads"){
+                load_ints(param.pads, attr);
+            } else if(attr.name() == "auto_pad"){
+                load_string(param.auto_pad, attr);
+            }
+        }
+
+        op_param = param;
+    }else{
+        op_param = NoParam();
+    }
+
+    return op_param;
 }
 
 Dtype load_dtype(const int onnx_dtype){
@@ -144,6 +203,9 @@ OP_TYPE load_op_type(const std::string& type) {
     if (type == "Relu")   return OP_TYPE::ReluOp;
     if (type == "MatMul") return OP_TYPE::MatMulOp;
 
+    // new op
+    if (type == "Conv")   return OP_TYPE::ConvOp;
+
     throw std::runtime_error("unsupported ONNX operator: " + type);
 }
 
@@ -185,7 +247,8 @@ std::vector<Node> load_node(onnx::ModelProto & model){
             std::vector<std::string>(node.input().begin(), node.input().end()),
             std::vector<std::string>(node.output().begin(), node.output().end()),
             node.name(),
-            load_op_type(node.op_type())
+            load_op_type(node.op_type()),
+            load_attribute(node)
         );
     }
 
@@ -279,7 +342,7 @@ Tensor load_image(const std::filesystem::path& path) {
         data.push_back((normalized - 0.1307f) / 0.3081f);
     }
 
-    return Tensor(Shape({1, 1, 28, 28}), std::move(data), Dtype::Float32);
+    return Tensor(Shape({1, 784}), std::move(data), Dtype::Float32);
 }
 
 Graph Loader::load(const std::string path){

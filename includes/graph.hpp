@@ -189,7 +189,7 @@ class Graph{
 
             for(auto i : executor_order_){
 
-                auto op = OperationFactory::create(node(i).op_type());
+                auto op = OperationFactory::create(node(i));
 
                 std::vector<TensorDesc> t;
                 for(auto j : node(i).inputs()){

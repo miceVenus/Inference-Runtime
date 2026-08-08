@@ -2,6 +2,9 @@
 #define IR_NODES_HPP
 
 #include "ir_types.hpp"
+#include "op_param.hpp"
+
+
 #include <string>
 #include <vector>
 #include <operation.hpp>
@@ -14,8 +17,10 @@ class IRNode{
                 std::string name,
                 OP_TYPE op_type,
                 std::vector<ValueId> in, 
-                std::vector<ValueId> out)
-        :id_(id), name_(std::move(name)), op_type_(op_type), input_(std::move(in)), output_(std::move(out)){}
+                std::vector<ValueId> out,
+                OpParam attribute)
+        :id_(id), name_(std::move(name)), op_type_(op_type), input_(std::move(in)), output_(std::move(out))
+        ,attribute_(std::move(attribute)){}
 
 
         NodeId id() const{
@@ -36,6 +41,10 @@ class IRNode{
         
         const std::vector<ValueId>& inputs() const{
             return input_;
+        }
+
+        const OpParam& attribute() const{
+            return attribute_;
         }
 
         const char* op_type_str() const{
@@ -65,6 +74,7 @@ class IRNode{
 
         std::vector<ValueId> input_;
         std::vector<ValueId> output_;
+        OpParam attribute_;
 
 };
 

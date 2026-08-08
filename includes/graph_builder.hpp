@@ -87,7 +87,8 @@ class GraphBuilder{
                 node.name(),
                 node.op_type(),
                 std::move(inputs),
-                std::move(outputs)
+                std::move(outputs),
+                node.param()
             );
 
             node_ids_.emplace(node.name(), id);

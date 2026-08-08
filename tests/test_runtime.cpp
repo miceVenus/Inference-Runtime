@@ -58,6 +58,16 @@ void expect_throws(Func func) {
     assert(thrown);
 }
 
+IRNode make_operation_node(OP_TYPE type) {
+    return IRNode(
+        0,
+        "factory_test",
+        type,
+        std::vector<ValueId>{},
+        std::vector<ValueId>{},
+        NoParam{});
+}
+
 
 void test_cpu_storage() {
     CpuStorage zeros(4);
@@ -156,7 +166,7 @@ void test_basic_ops() {
     const Tensor lhs(Shape({2, 3}), {2, 3, 5, 6, 7, 8}, Dtype::Float32);
     const Tensor rhs(Shape({2, 3}), {1, -2, 3, -4, 5, -6}, Dtype::Float32);
 
-    auto op = OperationFactory::create(OP_TYPE::AddOp);
+    auto op = OperationFactory::create(make_operation_node(OP_TYPE::AddOp));
     TensorDesc add_meta = op->forward_T({TensorDesc(lhs), TensorDesc(rhs)});
     assert(add_meta.shape_ == lhs.shape());
     assert(add_meta.dtype_ == Dtype::Float32);
@@ -166,7 +176,7 @@ void test_basic_ops() {
     assert(&add_ref == &add_out);
     expect_data_eq(add_out, {3, 1, 8, 2, 12, 2});
 
-    op = OperationFactory::create(OP_TYPE::MulOp);
+    op = OperationFactory::create(make_operation_node(OP_TYPE::MulOp));
     TensorDesc mul_meta = op->forward_T({TensorDesc(lhs), TensorDesc(rhs)});
     assert(mul_meta.shape_ == lhs.shape());
     assert(mul_meta.dtype_ == Dtype::Float32);
@@ -176,7 +186,7 @@ void test_basic_ops() {
     assert(&mul_ref == &mul_out);
     expect_data_eq(mul_out, {2, -6, 15, -24, 35, -48});
 
-    op = OperationFactory::create(OP_TYPE::ReluOp);
+    op = OperationFactory::create(make_operation_node(OP_TYPE::ReluOp));
     TensorDesc relu_meta = op->forward_T({TensorDesc(rhs)});
     assert(relu_meta.shape_ == rhs.shape());
     assert(relu_meta.dtype_ == Dtype::Float32);
@@ -188,40 +198,239 @@ void test_basic_ops() {
 
     expect_throws([&] {
         auto bad_rhs = Tensor(Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
-        OperationFactory::create(OP_TYPE::AddOp)->forward_T(
+        OperationFactory::create(make_operation_node(OP_TYPE::AddOp))->forward_T(
             {TensorDesc(lhs), TensorDesc(bad_rhs)});
     });
 
     expect_throws([&] {
         auto bad_rhs = Tensor(Shape({1, 6}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
-        OperationFactory::create(OP_TYPE::MulOp)->forward_T(
+        OperationFactory::create(make_operation_node(OP_TYPE::MulOp))->forward_T(
             {TensorDesc(lhs), TensorDesc(bad_rhs)});
     });
 }
 
-void test_matmul_op() {
-    const Tensor lhs(Shape({2, 3}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
-    const Tensor rhs(Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
+void expect_binary_broadcast(
+    OP_TYPE type,
+    const Tensor& lhs,
+    const Tensor& rhs,
+    const Shape& expected_shape,
+    const std::vector<Float32>& expected_data) {
+    auto op = OperationFactory::create(make_operation_node(type));
+    const TensorDesc output_desc = op->forward_T({TensorDesc(lhs), TensorDesc(rhs)});
 
-    auto op = OperationFactory::create(OP_TYPE::MatMulOp);
-    TensorDesc result_meta = op->forward_T({TensorDesc(lhs), TensorDesc(rhs)});
-    assert(result_meta.shape_ == Shape({2, 2}));
-    assert(result_meta.dtype_ == Dtype::Float32);
-    assert(result_meta.backend_ == Backend::CPU);
+    assert(output_desc.shape_ == expected_shape);
+    assert(output_desc.backend_ == Backend::CPU);
+    assert(output_desc.dtype_ == Dtype::Float32);
 
-    Tensor result(result_meta);
-    Tensor& result_ref = op->forward({&lhs, &rhs}, result);
-    assert(&result_ref == &result);
-    expect_data_eq(result, {22, 28, 49, 64});
+    Tensor output(output_desc);
+    Tensor& result = op->forward({&lhs, &rhs}, output);
+    assert(&result == &output);
+    expect_data_eq(output, expected_data);
+}
 
-    const Tensor vector_like(Shape({3}), {1, 2, 3}, Dtype::Float32);
+void test_binary_broadcast_ops() {
+    const Tensor matrix_lhs(
+        Shape({2, 3}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
+    const Tensor matrix_rhs(
+        Shape({2, 3}), {10, 20, 30, 40, 50, 60}, Dtype::Float32);
+
+    for (const OP_TYPE type : {OP_TYPE::AddOp, OP_TYPE::MulOp}) {
+        expect_binary_broadcast(
+            type,
+            matrix_lhs,
+            matrix_rhs,
+            Shape({2, 3}),
+            type == OP_TYPE::AddOp
+                ? std::vector<Float32>{11, 22, 33, 44, 55, 66}
+                : std::vector<Float32>{10, 40, 90, 160, 250, 360});
+    }
+
+    const Tensor row(
+        Shape({3}), {10, 20, 30}, Dtype::Float32);
+    for (const OP_TYPE type : {OP_TYPE::AddOp, OP_TYPE::MulOp}) {
+        expect_binary_broadcast(
+            type,
+            matrix_lhs,
+            row,
+            Shape({2, 3}),
+            type == OP_TYPE::AddOp
+                ? std::vector<Float32>{11, 22, 33, 14, 25, 36}
+                : std::vector<Float32>{10, 40, 90, 40, 100, 180});
+    }
+
+    const Tensor cube_lhs(
+        Shape({2, 1, 4}), {1, 2, 3, 4, 5, 6, 7, 8}, Dtype::Float32);
+    const Tensor matrix_rhs_3x4(
+        Shape({3, 4}),
+        {10, 20, 30, 40, 100, 200, 300, 400, 1000, 2000, 3000, 4000},
+        Dtype::Float32);
+    for (const OP_TYPE type : {OP_TYPE::AddOp, OP_TYPE::MulOp}) {
+        expect_binary_broadcast(
+            type,
+            cube_lhs,
+            matrix_rhs_3x4,
+            Shape({2, 3, 4}),
+            type == OP_TYPE::AddOp
+                ? std::vector<Float32>{
+                      11, 22, 33, 44, 101, 202, 303, 404,
+                      1001, 2002, 3003, 4004, 15, 26, 37, 48,
+                      105, 206, 307, 408, 1005, 2006, 3007, 4008}
+                : std::vector<Float32>{
+                      10, 40, 90, 160, 100, 400, 900, 1600,
+                      1000, 4000, 9000, 16000, 50, 120, 210, 320,
+                      500, 1200, 2100, 3200, 5000, 12000, 21000, 32000});
+    }
+
+    const Tensor scalar_like(
+        Shape({1}), {5}, Dtype::Float32);
+    const Tensor cube(
+        Shape({2, 3, 4}),
+        {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+         13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24},
+        Dtype::Float32);
+    expect_binary_broadcast(
+        OP_TYPE::AddOp,
+        cube,
+        scalar_like,
+        Shape({2, 3, 4}),
+        {6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+         18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29});
+    expect_binary_broadcast(
+        OP_TYPE::MulOp,
+        cube,
+        scalar_like,
+        Shape({2, 3, 4}),
+        {5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60,
+         65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120});
+
+    const Tensor scalar(
+        std::vector<long>{}, {2}, Dtype::Float32);
+    expect_binary_broadcast(
+        OP_TYPE::AddOp,
+        cube,
+        scalar,
+        Shape({2, 3, 4}),
+        {3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+         15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26});
+    expect_binary_broadcast(
+        OP_TYPE::MulOp,
+        cube,
+        scalar,
+        Shape({2, 3, 4}),
+        {2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24,
+         26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48});
+
     expect_throws([&] {
-        op->forward_T({TensorDesc(vector_like), TensorDesc(rhs)});
+        auto op = OperationFactory::create(make_operation_node(OP_TYPE::AddOp));
+        const Tensor incompatible(
+            Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
+        op->forward_T({TensorDesc(matrix_lhs), TensorDesc(incompatible)});
     });
 
-    const Tensor incompatible_rhs(Shape({2, 2}), {1, 2, 3, 4}, Dtype::Float32);
     expect_throws([&] {
-        op->forward_T({TensorDesc(lhs), TensorDesc(incompatible_rhs)});
+        auto op = OperationFactory::create(make_operation_node(OP_TYPE::MulOp));
+        const Tensor incompatible(
+            Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
+        op->forward_T({TensorDesc(matrix_lhs), TensorDesc(incompatible)});
+    });
+}
+
+void test_matmul_op() {
+    const auto expect_matmul = [](
+        const Tensor& lhs,
+        const Tensor& rhs,
+        const Shape& expected_shape,
+        const std::vector<Float32>& expected_data) {
+        auto op = OperationFactory::create(make_operation_node(OP_TYPE::MatMulOp));
+        const TensorDesc output_desc =
+            op->forward_T({TensorDesc(lhs), TensorDesc(rhs)});
+
+        assert(output_desc.shape_ == expected_shape);
+        assert(output_desc.backend_ == Backend::CPU);
+        assert(output_desc.dtype_ == Dtype::Float32);
+
+        Tensor output(output_desc);
+        Tensor& result = op->forward({&lhs, &rhs}, output);
+        assert(&result == &output);
+        expect_data_eq(output, expected_data);
+    };
+
+    const Tensor matrix_lhs(
+        Shape({2, 3}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
+    const Tensor matrix_rhs(
+        Shape({3, 2}), {1, 2, 3, 4, 5, 6}, Dtype::Float32);
+    expect_matmul(
+        matrix_lhs,
+        matrix_rhs,
+        Shape({2, 2}),
+        {22, 28, 49, 64});
+
+    const Tensor vector_lhs(
+        Shape({3}), {1, 2, 3}, Dtype::Float32);
+    expect_matmul(
+        vector_lhs,
+        matrix_rhs,
+        Shape({2}),
+        {22, 28});
+
+    const Tensor vector_rhs(
+        Shape({3}), {1, 2, 3}, Dtype::Float32);
+    expect_matmul(
+        matrix_lhs,
+        vector_rhs,
+        Shape({2}),
+        {14, 32});
+
+    const Tensor other_vector(
+        Shape({3}), {4, 5, 6}, Dtype::Float32);
+    expect_matmul(
+        vector_lhs,
+        other_vector,
+        Shape(std::vector<long>{}),
+        {32});
+
+    const Tensor batched_lhs(
+        Shape({2, 2, 3}),
+        {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+        Dtype::Float32);
+    const Tensor batched_rhs(
+        Shape({2, 3, 2}),
+        {1, 2, 3, 4, 5, 6, 1, 0, 0, 1, 1, 1},
+        Dtype::Float32);
+    expect_matmul(
+        batched_lhs,
+        batched_rhs,
+        Shape({2, 2, 2}),
+        {22, 28, 49, 64, 16, 17, 22, 23});
+
+    const Tensor broadcast_lhs(
+        Shape({2, 1, 2, 2}), {1, 2, 3, 4, 5, 6, 7, 8}, Dtype::Float32);
+    const Tensor broadcast_rhs(
+        Shape({3, 2, 2}),
+        {1, 0, 0, 1, 2, 0, 0, 2, 1, 1, 1, 1},
+        Dtype::Float32);
+    expect_matmul(
+        broadcast_lhs,
+        broadcast_rhs,
+        Shape({2, 3, 2, 2}),
+        {1, 2, 3, 4, 2, 4, 6, 8, 3, 3, 7, 7,
+         5, 6, 7, 8, 10, 12, 14, 16, 11, 11, 15, 15});
+
+    expect_throws([&] {
+        const Tensor incompatible_rhs(
+            Shape({4}), {1, 2, 3, 4}, Dtype::Float32);
+        auto op = OperationFactory::create(make_operation_node(OP_TYPE::MatMulOp));
+        op->forward_T({TensorDesc(matrix_lhs), TensorDesc(incompatible_rhs)});
+    });
+
+    expect_throws([&] {
+        const Tensor incompatible_batch_rhs(
+            Shape({3, 3, 2}),
+            {1, 0, 0, 1, 1, 1, 2, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1},
+            Dtype::Float32);
+        auto op = OperationFactory::create(make_operation_node(OP_TYPE::MatMulOp));
+        op->forward_T(
+            {TensorDesc(batched_lhs), TensorDesc(incompatible_batch_rhs)});
     });
 }
 
@@ -498,6 +707,7 @@ int main() {
     test_cpu_storage();
     test_storage_interface();
     test_basic_ops();
+    test_binary_broadcast_ops();
     test_matmul_op();
     test_graph_validation();
     test_life_span_uses_last_consumer();

@@ -84,7 +84,7 @@ class Executor{
                 NodeId i = exe_queue[index];
 
 
-                auto op = OperationFactory::create(e_graph_.node(i).op_type());
+                auto op = OperationFactory::create(e_graph_.node(i));
 
                 std::vector<const Tensor*> t;
                 for(auto j : e_graph_.node(i).inputs()) 

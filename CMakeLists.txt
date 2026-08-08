@@ -48,7 +48,8 @@ add_library(
         src/shape.cpp 
         src/dtype.cpp 
         src/storage.cpp
-        src/loader.cpp)
+        src/loader.cpp
+        src/broadcast.cpp)
 
 target_include_directories(runtime PUBLIC includes)
 

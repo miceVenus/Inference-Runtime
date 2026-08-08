@@ -2,6 +2,7 @@
 #define NODE_HPP
 
 #include "operation.hpp"
+#include "op_param.hpp"
 
 #include <string>
 #include <iostream>
@@ -25,8 +26,10 @@ class Node{
         Node(   std::vector<std::string> in, 
                 std::vector<std::string> out,
                 std::string name,
-                OP_TYPE op_type)
-        :output_(std::move(out)), input_(std::move(in)), name_(std::move(name)), op_type_(op_type){
+                OP_TYPE op_type,
+                OpParam param)
+        :output_(std::move(out)), input_(std::move(in)), name_(std::move(name)), op_type_(op_type),
+        param_(std::move(param)){
 
         }
 
@@ -61,6 +64,10 @@ class Node{
             
         }
 
+        const OpParam param() const{
+            return param_;
+        }
+
         OP_TYPE op_type() const{
             return op_type_;
         }
@@ -75,6 +82,7 @@ class Node{
         std::vector<std::string> output_;
         std::vector<std::string> input_;
         OP_TYPE op_type_;
+        OpParam param_;
         friend std::ostream& operator<<(std::ostream &os, const Node &node);
 
 

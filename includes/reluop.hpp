@@ -5,6 +5,8 @@
 #include "operation.hpp"
 #include <algorithm>
 
+using ReluParam = size_t;
+
 class ReluOp : public Operation{
 
     public:

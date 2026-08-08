@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include <ctime>
+
 namespace {
 
 std::filesystem::path find_file(const std::filesystem::path& path) {
@@ -31,7 +33,7 @@ std::filesystem::path find_file(const std::filesystem::path& path) {
 
 int main() {
     constexpr const char* model_name =
-        "experiments/mnist_onnx/artifacts/mnist_pressure_net.onnx";
+        "experiments/mnist_onnx/artifacts/mnist_heavy_mlp.onnx";
     constexpr const char* image_name = "test_samples/mnist_test_00000_label_7.png";
 
     try {
@@ -42,7 +44,11 @@ int main() {
         std::cout << "Loaded input image: " << image_path << '\n';
 
         std::cout << "Loading model: " << model_path << '\n';
+        clock_t start = clock();
         Graph graph = Loader::load(model_path.string());
+        clock_t end = clock();
+
+        std::cout << "Loading model finished after  " << double(end - start) /  CLOCKS_PER_SEC * 1000<< " ms \n";
 
         if (graph.inputs().size() != 1 || graph.outputs().size() != 1) {
             throw std::runtime_error("MNIST demo expects one input and one output");
@@ -56,9 +62,17 @@ int main() {
             throw std::runtime_error("MNIST image shape does not match model input");
         }
 
+        start = clock();
+
         Executor executor(graph);
         executor.set_input(input_id, std::move(image));
+
         executor.run();
+
+        end = clock();
+
+        std::cout << "execute model finished after  " << double(end - start) /  CLOCKS_PER_SEC * 1000 << " ms \n";
+
 
         const Tensor& logits = executor.get_output(output_name);
         const auto best = std::max_element(

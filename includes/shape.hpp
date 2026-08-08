@@ -11,7 +11,7 @@ class Shape{
 
     public:
         Shape(std::initializer_list<long> const &dims) : dims_(dims){}
-        Shape(std::vector<long> const &dims) : dims_(dims){}
+        Shape(std::vector<long> dims) : dims_(std::move(dims)){}
 
         Shape(const Shape & shape)
         : dims_(shape.dims_){}

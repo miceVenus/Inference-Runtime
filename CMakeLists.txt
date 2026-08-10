@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Protobuf REQUIRED)
 find_package(PNG REQUIRED)
+find_package(CUDAToolkit 13.2 REQUIRED)
 
 message(STATUS "Protobuf version: ${Protobuf_VERSION}")
 message(STATUS "protoc: ${Protobuf_PROTOC_EXECUTABLE}")
@@ -56,6 +57,11 @@ target_include_directories(runtime PUBLIC includes)
 target_link_libraries(runtime
     PUBLIC
         onnx_proto
+)
+
+target_link_libraries(runtime
+    PUBLIC
+        CUDA::cudart
 )
 
 add_executable(runtime_demo src/main.cpp)

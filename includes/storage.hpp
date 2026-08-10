@@ -57,7 +57,6 @@ class CpuStorage final : public Storage{
 
         CpuStorage(CpuStorage &&storage) noexcept;
 
-
         Backend backend() const noexcept override;
 
         std::size_t size() const noexcept override;
@@ -80,6 +79,40 @@ class CpuStorage final : public Storage{
 
     private:
         std::vector<Float32> data_;
+
+};
+
+
+class CudaStorage final : public Storage{
+
+    public:
+        explicit CudaStorage(std::size_t numel);
+
+        CudaStorage(std::vector<Float32> data);
+
+        CudaStorage(const CudaStorage &storage);
+
+        CudaStorage(CudaStorage &&storage) noexcept;
+
+        Backend backend() const noexcept override;
+
+        std::size_t size() const noexcept override;
+
+        std::size_t size_bytes() const noexcept override;
+
+        Float32 * raw_data() override;
+
+        const Float32 * raw_data() const override;
+
+        CudaStorage& operator=(CudaStorage storage);
+
+        std::unique_ptr<Storage> clone() const override;
+
+        void fill(Float32 value) override;
+
+    private:
+        Float32 * data_;
+        std::size_t size_;
 
 };
 

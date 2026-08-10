@@ -15,7 +15,7 @@ class StorageFac{
                     return std::make_unique<CpuStorage>(numel);
                 
                 case Backend::CUDA:
-                    throw std::runtime_error("CUDA storage is not implemented");
+                    return std::make_unique<CudaStorage>(numel);
             }
             throw std::runtime_error("Unknown backend");
         }
@@ -28,7 +28,7 @@ class StorageFac{
                     return std::make_unique<CpuStorage>(std::move(data));
                 
                 case Backend::CUDA:
-                    throw std::runtime_error("CUDA storage is not implemented");
+                    return std::make_unique<CudaStorage>(std::move(data));
             }
             throw std::runtime_error("Unknown backend");
         }

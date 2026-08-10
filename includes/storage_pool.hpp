@@ -11,24 +11,27 @@ class StoragePool{
 
     public:
         std::unique_ptr<Storage> get(TensorDesc t_T){
+
+            std::unique_ptr<Storage> ptr;
+
             switch (t_T.backend_){
                 case Backend::CPU:{
-                    auto ptr = select_from_cpu_pool(dtype_size(t_T.dtype_) * t_T.shape_.numel());
-
-                    if(ptr){
-                        return ptr;
-                    }else{
-                        return StorageFac::create(t_T.shape_.numel(), Backend::CPU);
-                    }
-
+                    ptr = select_from_cpu_pool(dtype_size(t_T.dtype_) * t_T.shape_.numel());
                     break;
                 }
                 
-                case Backend::CUDA:
-                    throw std::runtime_error("CUDA STORAGE IS NOT SUPPORTED");
-
+                case Backend::CUDA:{
+                    ptr = select_from_cuda_pool(dtype_size(t_T.dtype_) * t_T.shape_.numel());
+                    break;
+                }
                 default:
                     throw std::runtime_error("Unknown Backend");
+            }
+
+            if(ptr){
+                return ptr;
+            }else{
+                return StorageFac::create(t_T.shape_.numel(), t_T.backend_);
             }
         }
 
@@ -38,8 +41,9 @@ class StoragePool{
                     return std::move(cpu_pool_[s_desc.id]);
                 }
                 
-                case Backend::CUDA:
-                    throw std::runtime_error("CUDA STORAGE IS NOT SUPPORTED");
+                case Backend::CUDA:{
+                    return std::move(cuda_pool_[s_desc.id]);
+                }
 
                 default:
                     throw std::runtime_error("Unknown Backend");
@@ -57,8 +61,10 @@ class StoragePool{
                     break;
                 }
                 
-                case Backend::CUDA:
-                    throw std::runtime_error("CUDA STORAGE IS NOT SUPPORTED");
+                case Backend::CUDA:{
+                    cuda_pool_.push_back(std::move(ptr));
+                    break;
+                }
 
                 default:
                     throw std::runtime_error("Unknown Backend");
@@ -73,8 +79,10 @@ class StoragePool{
                     break;
                 }
                 
-                case Backend::CUDA:
-                    throw std::runtime_error("CUDA STORAGE IS NOT SUPPORTED");
+                case Backend::CUDA:{
+                    cuda_pool_[s_id] = std::move(ptr);
+                    break;
+                }
 
                 default:
                     throw std::runtime_error("Unknown Backend");
@@ -86,6 +94,7 @@ class StoragePool{
 
     private:
         std::vector<std::unique_ptr<Storage>> cpu_pool_;
+        std::vector<std::unique_ptr<Storage>> cuda_pool_;
 
         std::unique_ptr<Storage> select_from_cpu_pool(std::size_t bytes){
             auto it = std::find_if(cpu_pool_.begin(), cpu_pool_.end(), [bytes](const auto & i){return i->size_bytes() == bytes;});
@@ -99,11 +108,30 @@ class StoragePool{
             return result;
         }
 
+        std::unique_ptr<Storage> select_from_cuda_pool(std::size_t bytes){
+            auto it = std::find_if(cuda_pool_.begin(), cuda_pool_.end(), [bytes](const auto & i){return i->size_bytes() == bytes;});
+            if (it == cuda_pool_.end()) {
+                return nullptr;
+            }
+
+            auto result = std::move(*it);
+            cuda_pool_.erase(it);
+
+            return result;
+        }
+
         void put_into_cpu_pool(std::unique_ptr<Storage> ptr){
             if(ptr->backend() != Backend::CPU){
                 throw std::runtime_error("the other device want to in cpu storage pool");
             }
             cpu_pool_.push_back(std::move(ptr));
+        }
+
+        void put_into_cuda_pool(std::unique_ptr<Storage> ptr){
+            if(ptr->backend() != Backend::CUDA){
+                throw std::runtime_error("the other device want to in cpu storage pool");
+            }
+            cuda_pool_.push_back(std::move(ptr));
         }
 
 };

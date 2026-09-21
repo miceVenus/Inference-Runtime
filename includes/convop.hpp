@@ -17,6 +17,7 @@ class ConvOp : public Operation{
 
     public:
 
+        // TODO: replace this placeholder with ONNX convolution semantics.
         explicit ConvOp(ConvParam param)
         :param_(std::move(param)){}
 

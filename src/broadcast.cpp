@@ -5,6 +5,7 @@ Shape broadcast_shape(const Shape& lhs, const Shape& rhs){
     auto& lhs_dims = lhs.dims();
     auto& rhs_dims = rhs.dims();
 
+    // Broadcasting aligns dimensions from the right.
     size_t rank = std::max(lhs_dims.size(), rhs_dims.size());
 
     std::vector<long> aligned_lhs(rank, 1);
@@ -72,6 +73,7 @@ BroadcastPlan make_broadcast_plan(const Shape& lhs, const Shape& rhs){
         }
         
         
+        // A zero stride repeats values along an expanded axis.
         if(aligned_lhs[i] == 1){
             lhs_strides[i] = 0;
         }else{

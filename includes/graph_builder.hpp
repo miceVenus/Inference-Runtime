@@ -96,6 +96,7 @@ class GraphBuilder{
         }
 
         ValueId intern_value(const std::string & name){
+            // Reuse one value ID for every occurrence of a tensor name.
             auto it = value_ids_.find(name);
             if(it != value_ids_.end()){
                 return it->second;

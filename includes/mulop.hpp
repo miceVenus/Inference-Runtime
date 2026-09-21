@@ -3,6 +3,7 @@
 
 #include "operation.hpp"
 #include "tensor.hpp"
+#include "broadcast.hpp"
 
 using MulParam = size_t;
 
@@ -24,13 +25,7 @@ class MulOp : public Operation{
             return TensorDesc(std::move(output), t1.backend_, t1.dtype_);
         }
 
-        Tensor& forward(const std::vector<const Tensor*> &inputs, Tensor & output) const override{
-
-            const Tensor & lhs = *inputs.at(0);
-            const Tensor & rhs = *inputs.at(1);
-
-            return binary_broadcast_cpu(lhs, rhs, output, [](Float32 a, Float32 b){return a * b;});
-        }
+        Tensor& forward(const std::vector<const Tensor*> &inputs, Tensor & output) const override;
 
 };
 

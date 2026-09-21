@@ -3,3 +3,4 @@ build/
 .venv
 experiments
 third_party
+docs*

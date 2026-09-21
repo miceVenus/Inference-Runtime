@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <unordered_map>
-#include <cassert>
 
 class Executor{
 
@@ -21,20 +20,21 @@ class Executor{
         }
 
         void set_input(const ValueId v_id, Tensor &&t){
-
-            assert(e_graph_.desc(v_id) == TensorDesc(t));
-
             const auto & i = e_graph_.inputs();
             // const auto & w = e_graph.initializers();
 
             const auto & it_i = std::find(i.cbegin(), i.cend(), v_id);
-            // const auto & it_w = std::find(w.cbegin(), w.cend(), v_id);
-
-            if(it_i != i.cend()){
-                e_map_[v_id] = std::move(t);
-            }else{
+            if(it_i == i.cend()){
                 throw std::runtime_error("set input received v_id which is not in graph input");
             }
+
+            // Enforce the shape used by static inference and buffer planning.
+            if (e_graph_.desc(v_id) != TensorDesc(t)) {
+                throw std::runtime_error(
+                    "input tensor does not match the graph's inferred descriptor");
+            }
+
+            e_map_[v_id] = std::move(t);
             
         }
 
@@ -97,9 +97,10 @@ class Executor{
                 Tensor out(t_T, mem_pool_.get(buffers_[get_b_id(v_id)]));
 
 
-                // no multi outputs for now
+                // TODO: execute every output of multi-output operators.
                 set_tensor(v_id, std::move(op->forward(t, out.fill(0))));
 
+                // Return intermediates after their final consumer finishes.
                 for(auto j : e_graph_.node(i).inputs()){
                     if(v_b_map_.contains(j)){
                         Tensor & t = e_map_[j];
@@ -136,7 +137,7 @@ class Executor{
                 NodeId n_id_1 = exe_queue[index_1];
                 for(auto v_id_1 : e_graph_.node(n_id_1).outputs()){
 
-                    // there need a better planning
+                    // Reuse a buffer only after its previous value expires.
 
                     bool founded = false;
 

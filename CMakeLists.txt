@@ -42,6 +42,24 @@ target_link_libraries(onnx_proto
         protobuf::libprotobuf
 )
 
+# Keep CPU operators in a separate library and optimize their kernels.
+add_library(
+    operator_cpu
+        src/op/cpu/addop.cpp
+        src/op/cpu/mulop.cpp
+        src/op/cpu/reluop.cpp
+        src/op/cpu/matmulop.cpp
+        src/op/cpu/elementwise.cpp
+        src/op/cpu/cpu_kernels.cpp
+        src/broadcast.cpp
+)
+
+target_include_directories(operator_cpu PUBLIC includes)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    # Enable optimized kernels even when the rest of the project is Debug.
+    target_compile_options(operator_cpu PRIVATE -O3)
+endif()
 
 add_library(
     runtime 
@@ -49,20 +67,11 @@ add_library(
         src/shape.cpp 
         src/dtype.cpp 
         src/storage.cpp
-        src/loader.cpp
-        src/broadcast.cpp)
+        src/loader.cpp)
 
 target_include_directories(runtime PUBLIC includes)
 
-target_link_libraries(runtime
-    PUBLIC
-        onnx_proto
-)
-
-target_link_libraries(runtime
-    PUBLIC
-        CUDA::cudart
-)
+target_link_libraries(runtime PUBLIC onnx_proto operator_cpu CUDA::cudart)
 
 add_executable(runtime_demo src/main.cpp)
 

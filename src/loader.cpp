@@ -11,6 +11,7 @@
 #include <png.h>
 #include <map>
 #include <string>
+#include <unordered_set>
 
 namespace{
 
@@ -19,6 +20,7 @@ std::vector<long> shape_dims_trans(const google::protobuf::RepeatedPtrField<onnx
     std::vector<long> res;
     for(auto & d : onnx_dims){
         if(d.has_dim_param()){
+            // Symbolic dimensions use 1 until runtime shape binding is supported.
             res.push_back(1);
         }else if(d.has_dim_value()){
             res.push_back(d.dim_value());
@@ -94,6 +96,7 @@ OpParam load_attribute(const onnx::NodeProto &node){
 }
 
 Dtype load_dtype(const int onnx_dtype){
+    // The runtime currently stores tensors as Float32 only.
     switch (onnx_dtype) {
         case onnx::TensorProto::FLOAT:
             return Dtype::Float32;
@@ -198,6 +201,7 @@ std::vector<Float32> load_data(const onnx::TensorProto &tensor){
 
 
 OP_TYPE load_op_type(const std::string& type) {
+    // Match ONNX names to runtime operator types here.
     if (type == "Add")    return OP_TYPE::AddOp;
     if (type == "Mul")    return OP_TYPE::MulOp;
     if (type == "Relu")   return OP_TYPE::ReluOp;
@@ -278,19 +282,41 @@ std::vector<std::string> load_output(onnx::ModelProto & model){
     return result;
 }
 
-std::vector<TensorDesc> load_input_desc(onnx::ModelProto & model){
+std::vector<TensorDesc> load_input_desc(
+    onnx::ModelProto & model,
+    std::optional<long> batch_size){
     auto & graph = model.graph();
     std::vector<TensorDesc> res;
+    std::unordered_set<std::string> initializer_names;
+    for (const auto& initializer : graph.initializer()) {
+        initializer_names.insert(initializer.name());
+    }
+
+    bool batch_axis_bound = false;
 
     for(auto & i : graph.input()){
         auto & onnx_shape = i.type().tensor_type().shape();
         auto onnx_dtype = i.type().tensor_type().elem_type();
+        auto dims = shape_dims_trans(onnx_shape.dim());
+
+        // Bind the leading data axis before graph shape inference.
+        if (batch_size && !initializer_names.contains(i.name())) {
+            if (!dims.empty()) {
+                dims.front() = *batch_size;
+                batch_axis_bound = true;
+            }
+        }
 
         res.emplace_back(
-            Shape(shape_dims_trans(onnx_shape.dim())),
+            Shape(std::move(dims)),
             Backend::CPU,
             load_dtype(onnx_dtype)
         );
+    }
+
+    if (batch_size && !batch_axis_bound) {
+        throw std::runtime_error(
+            "batch size was provided, but the model has no data input");
     }
 
     return res;
@@ -316,36 +342,63 @@ std::unordered_map<std::string, Tensor> load_initializer(onnx::ModelProto & mode
 }
 
 
-Tensor load_image(const std::filesystem::path& path) {
-    png_image image{};
-    image.version = PNG_IMAGE_VERSION;
-
-    if (!png_image_begin_read_from_file(&image, path.c_str())) {
-        throw std::runtime_error(
-            "failed to read PNG header: " + std::string(image.message));
+Tensor load_image_batch(const std::vector<std::filesystem::path>& paths) {
+    if (paths.empty()) {
+        throw std::invalid_argument("image batch must not be empty");
     }
 
-    image.format = PNG_FORMAT_GRAY;
-    std::vector<unsigned char> pixels(PNG_IMAGE_SIZE(image));
-    if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr)) {
-        const std::string message = image.message;
-        png_image_free(&image);
-        throw std::runtime_error("failed to decode PNG: " + message);
-    }
-
-    png_image_free(&image);
-
+    constexpr std::size_t mnist_image_size = 28 * 28;
     std::vector<Float32> data;
-    data.reserve(pixels.size());
-    for (unsigned char pixel : pixels) {
-        const Float32 normalized = static_cast<Float32>(pixel) / 255.0f;
-        data.push_back((normalized - 0.1307f) / 0.3081f);
+    data.reserve(paths.size() * mnist_image_size);
+
+    for (const auto& path : paths) {
+        png_image image{};
+        image.version = PNG_IMAGE_VERSION;
+
+        if (!png_image_begin_read_from_file(&image, path.c_str())) {
+            throw std::runtime_error(
+                "failed to read PNG header: " + std::string(image.message));
+        }
+
+        if (image.width != 28 || image.height != 28) {
+            png_image_free(&image);
+            throw std::runtime_error(
+                "MNIST images must have dimensions 28x28: " + path.string());
+        }
+
+        image.format = PNG_FORMAT_GRAY;
+        std::vector<unsigned char> pixels(PNG_IMAGE_SIZE(image));
+        if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr)) {
+            const std::string message = image.message;
+            png_image_free(&image);
+            throw std::runtime_error("failed to decode PNG: " + message);
+        }
+
+        png_image_free(&image);
+
+        // Apply the same normalization to every row in the batch.
+        for (unsigned char pixel : pixels) {
+            const Float32 normalized = static_cast<Float32>(pixel) / 255.0f;
+            data.push_back((normalized - 0.1307f) / 0.3081f);
+        }
     }
 
-    return Tensor(Shape({1, 784}), std::move(data), Dtype::Float32);
+    return Tensor(
+        Shape({static_cast<long>(paths.size()),
+               static_cast<long>(mnist_image_size)}),
+        std::move(data),
+        Dtype::Float32);
 }
 
-Graph Loader::load(const std::string path){
+Tensor load_image(const std::filesystem::path& path) {
+    return load_image_batch({path});
+}
+
+Graph Loader::load(const std::string path, std::optional<long> batch_size){
+    if (batch_size && *batch_size <= 0) {
+        throw std::invalid_argument("batch size must be positive");
+    }
+
     onnx::ModelProto model = onnx_load(path);
     GraphBuilder graph_builder;
     
@@ -360,7 +413,7 @@ Graph Loader::load(const std::string path){
         load_node(model),
         load_input(model),
         load_output(model),
-        load_input_desc(model),
+        load_input_desc(model, batch_size),
         load_initializer(model)
     );
 }

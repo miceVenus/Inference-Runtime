@@ -3,6 +3,7 @@
 
 #include "shape.hpp"
 #include "tensor.hpp"
+#include "cpu_kernels.hpp"
 
 
 struct BroadcastPlan{
@@ -16,35 +17,14 @@ BroadcastPlan make_broadcast_plan(const Shape& lhs, const Shape& rhs);
 
 Shape broadcast_shape(const Shape& lhs, const Shape& rhs);
 
+Tensor& add_broadcast_cuda();
 
-#pragma once
+Tensor& mul_broadcast_cuda();
 
-template <typename BinaryFunction>
-Tensor& binary_broadcast_cpu(const Tensor& lhs, const Tensor& rhs, Tensor& output, BinaryFunction function){
-
-        const auto plan = make_broadcast_plan(lhs.shape(), rhs.shape());
-
-        const auto& output_dims = plan.output_shape.dims();
-
-        for (long linear = 0; linear < output.numel(); linear++) {
-            long remaining = linear;
-            long lhs_offset = 0;
-            long rhs_offset = 0;
-
-            for (long axis = output_dims.size() - 1; axis >= 0; axis--) {
-                const long coordinate = remaining % output_dims[axis];
-
-                remaining /= output_dims[axis];
-
-                lhs_offset += coordinate * plan.lhs_strides[axis];
-
-                rhs_offset += coordinate * plan.rhs_strides[axis];
-            }
-
-            output[linear] = function(lhs[lhs_offset], rhs[rhs_offset]);
-        }
-
-        return output;
-}
+Tensor& binary_broadcast_cpu(
+    const Tensor& lhs,
+    const Tensor& rhs,
+    Tensor& output,
+    cpu_runtime::BinaryOpKind operation);
 
 #endif

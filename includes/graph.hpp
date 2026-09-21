@@ -97,6 +97,7 @@ class Graph{
 
         void topological_sort(){
 
+            // Schedule each node after all of its input producers.
             std::vector<std::vector<NodeId>> adjacency(nodes_.size());
             std::vector<std::size_t> indegree(nodes_.size(), 0);
             std::queue<NodeId> ready;
@@ -200,7 +201,7 @@ class Graph{
                 }
 
 
-                // To Be Care I assumed that Op`s result must be size(1);
+                // TODO: infer separate descriptors for multi-output operators.
                 for(auto j : node(i).outputs()){
                     value(j).set_desc(std::move(op->forward_T(t)));
                 }

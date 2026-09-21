@@ -3,7 +3,6 @@
 
 #include "tensor.hpp"
 #include "operation.hpp"
-#include <algorithm>
 
 using ReluParam = size_t;
 
@@ -11,17 +10,7 @@ class ReluOp : public Operation{
 
     public:
 
-        Tensor& forward(const std::vector<const Tensor*> &inputs, Tensor & output) const override{
-
-            const Tensor & t = *inputs.at(0);
-
-            for(int i = 0; i < t.numel(); i++){
-                output[i] = std::max(0.f, t[i]);
-            }
-
-            return output;
-
-        }
+        Tensor& forward(const std::vector<const Tensor*> &inputs, Tensor & output) const override;
 
         TensorDesc forward_T(const std::vector<TensorDesc> &inputs) const override{
 

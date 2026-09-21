@@ -33,7 +33,7 @@ std::filesystem::path find_file(const std::filesystem::path& path) {
 
 int main() {
     constexpr const char* model_name =
-        "experiments/mnist_onnx/artifacts/mnist_heavy_mlp.onnx";
+        "test_samples/mnist_heavy_mlp.onnx";
     constexpr const char* image_name = "test_samples/mnist_test_00000_label_7.png";
 
     try {
@@ -77,6 +77,7 @@ int main() {
         const Tensor& logits = executor.get_output(output_name);
         const auto best = std::max_element(
             logits.raw_data(), logits.raw_data() + logits.numel());
+        // The largest logit index is the predicted class.
         const std::size_t predicted =
             static_cast<std::size_t>(best - logits.raw_data());
 

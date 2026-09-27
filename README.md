@@ -79,28 +79,25 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-MNIST 示例程序默认读取以下文件：
-
-- `test_samples/mnist_heavy_mlp.onnx`
-- `test_samples/mnist_test_00000_label_7.png`
-
-确保文件位于对应路径后运行：
+性能基准程序接收模型路径、MNIST 数据目录，以及可选的 split、batch size 和样本数。数据目录可以是 `MNIST` 或其 `raw` 子目录；默认使用测试集、batch size 16 和整个 split。它读取未压缩的 IDX 文件，并使用与 `load_image_batch` 相同的归一化方式：
 
 ```bash
-./build/runtime_demo
+./build/runtime_demo \
+  test_samples/mnist_heavy_mlp.onnx \
+  experiments/mnist_onnx/data/MNIST \
+  test \
+  16
 ```
 
-## MNIST 效果
+参数格式为 `MODEL.onnx MNIST_DIR [train|test] [BATCH_SIZE] [MAX_SAMPLES]`。例如把 `test` 改为 `train` 可测训练集；`MAX_SAMPLES` 可限制测量样本数。程序预热 5 次，然后遍历所选数据，输出每批延迟、吞吐、分类准确率、worker 数和 AVX2/FMA 状态。吞吐只按 `Executor::run()` 的累计时间计算，不包含 IDX 读取、归一化、组 batch、设置输入或准确率计算。最后一个 batch 不足时会用最后一张有效图片补齐，准确率只统计真实数据样本。
 
-性能测试使用 `mnist_heavy_mlp.onnx`：8 个隐藏层、每层 1024 个单元，包含 9 个 MatMul、9 个 Add 和 8 个 ReLU。模型实验记录的 MNIST 测试集准确率为 98.99%。运行时对提供的标签为 7 的样例也预测为 7。
+## MNIST 性能结果
 
-下表是在 Intel Core i7-12700 上的开发机测量结果。运行时使用 16 个 CPU worker，检测到 AVX2/FMA。每个 batch 使用同一张样例图重复填充；每档预热 5 次、测量 100 次。计时使用墙钟，只包含 `Executor::run()`，不含模型加载、图片解码和输入设置。
+性能测试使用 `mnist_heavy_mlp.onnx`：8 个隐藏层、每层 1024 个单元，包含 9 个 MatMul、9 个 Add 和 8 个 ReLU。下表使用完整的 10,000 张 MNIST 测试集，每个 batch size 单独运行；当前环境使用 16 个 CPU worker，并检测到 AVX2/FMA。延迟是每个固定大小 batch 的 `Executor::run()` 时间，吞吐是有效图片数除以这些运行时间之和。
 
-| Batch | 每次 `run()` 平均延迟 | P95 延迟 | 吞吐 |
-|---:|---:|---:|---:|
-| 1 | 2.130 ms | 3.184 ms | 469 张/秒 |
-| 4 | 2.071 ms | 2.709 ms | 1,932 张/秒 |
-| 8 | 2.396 ms | 3.428 ms | 3,339 张/秒 |
-| 16 | 3.816 ms | 5.475 ms | 4,193 张/秒 |
-
-Batch 16 的平均单次延迟约 3.8 ms，吞吐约为 batch 1 的 8.9 倍 而未经优化时 每次run()的平均延迟约为30-40ms。
+| Batch | 每批平均延迟 | P95 延迟 | 吞吐 | 测试集准确率 |
+|---:|---:|---:|---:|---:|
+| 1 | 2.029 ms | 2.832 ms | 493 张/秒 | 98.990% |
+| 4 | 2.022 ms | 2.690 ms | 1,978 张/秒 | 98.990% |
+| 8 | 2.366 ms | 3.003 ms | 3,381 张/秒 | 98.990% |
+| 16 | 2.945 ms | 3.620 ms | 5,434 张/秒 | 98.990% |

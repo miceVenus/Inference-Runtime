@@ -163,12 +163,10 @@ void matmul_tile_avx2_microkernel(
     __m256 c31 = zero;
 
     for (long k = reduction_begin; k < reduction_end; ++k) {
-        const __m256 rhs0 = _mm256_loadu_ps(
-            rhs + k * N + column_begin);
+        const __m256 rhs0 = _mm256_loadu_ps(rhs + k * N + column_begin);
         __m256 rhs1 = zero;
         if constexpr (Vectors > 1) {
-            rhs1 = _mm256_loadu_ps(
-                rhs + k * N + column_begin + 8);
+            rhs1 = _mm256_loadu_ps(rhs + k * N + column_begin + 8);
         }
 
         const __m256 lhs0 = _mm256_set1_ps(lhs[row_begin * K + k]);
@@ -178,8 +176,7 @@ void matmul_tile_avx2_microkernel(
         }
 
         if constexpr (Rows > 1) {
-            const __m256 lhs1 = _mm256_set1_ps(
-                lhs[(row_begin + 1) * K + k]);
+            const __m256 lhs1 = _mm256_set1_ps(lhs[(row_begin + 1) * K + k]);
             c10 = _mm256_fmadd_ps(lhs1, rhs0, c10);
             if constexpr (Vectors > 1) {
                 c11 = _mm256_fmadd_ps(lhs1, rhs1, c11);

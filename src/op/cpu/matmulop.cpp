@@ -43,11 +43,9 @@ Tensor& MatMulOp::forward(
     // Leading axes are broadcast batch dimensions for the matrix products.
     Shape lhs_batch_shape(std::vector<long>(lhs_dims.begin(), lhs_dims.end() - 2));
     Shape rhs_batch_shape(std::vector<long>(rhs_dims.begin(), rhs_dims.end() - 2));
-    const BroadcastPlan batch_plan =
-        make_broadcast_plan(lhs_batch_shape, rhs_batch_shape);
+    const BroadcastPlan batch_plan = make_broadcast_plan(lhs_batch_shape, rhs_batch_shape);
     const auto& batch_dims = batch_plan.output_shape.dims();
-    const std::size_t batch_count =
-        static_cast<std::size_t>(batch_plan.output_shape.numel());
+    const std::size_t batch_count = static_cast<std::size_t>(batch_plan.output_shape.numel());
 
     const std::size_t row_tiles = static_cast<std::size_t>(
         (M + cpu_runtime::matmul_tile_rows - 1) /
@@ -64,10 +62,8 @@ Tensor& MatMulOp::forward(
     const Float32* lhs_data = lhs.raw_data();
     const Float32* rhs_data = rhs.raw_data();
     Float32* output_data = output.raw_data();
-    const std::size_t output_count =
-        static_cast<std::size_t>(output.numel());
-    const std::size_t output_matrix_count =
-        static_cast<std::size_t>(output_matrix_size);
+    const std::size_t output_count = static_cast<std::size_t>(output.numel());
+    const std::size_t output_matrix_count = static_cast<std::size_t>(output_matrix_size);
 
     const auto run_tile = [&](std::size_t job,
                               Float32* destination,
@@ -112,12 +108,10 @@ Tensor& MatMulOp::forward(
     if (total_work >= matmul_parallel_work_threshold &&
         K >= matmul_split_k_threshold &&
         job_count < cpu_runtime::worker_pool().thread_count()) {
-        const std::size_t worker_budget =
-            cpu_runtime::worker_pool().thread_count() / job_count;
-        const std::size_t reduction_chunks = static_cast<std::size_t>(
-            1 + (K - 1) / matmul_split_k_grain);
-        const std::size_t split_count =
-            std::min(worker_budget, reduction_chunks);
+            
+        const std::size_t worker_budget = cpu_runtime::worker_pool().thread_count() / job_count;
+        const std::size_t reduction_chunks = static_cast<std::size_t>( 1 + (K - 1) / matmul_split_k_grain);
+        const std::size_t split_count = std::min(worker_budget, reduction_chunks);
 
         if (split_count > 1) {
             std::vector<Float32> partial_outputs(output_count * split_count);
